@@ -1,0 +1,132 @@
+import { useStore, deriveTasks } from "@/lib/store";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { Button } from "@/components/ui/button";
+import { Pencil, Lock, ArrowRight, ArrowLeft, CheckCircle2, Play, RotateCcw } from "lucide-react";
+
+export function TaskDetailSheet() {
+  const detailTaskId = useStore((s) => s.detailTaskId);
+  const open = detailTaskId !== null;
+  const openDetail = useStore((s) => s.openDetail);
+  const openEdit = useStore((s) => s.openEdit);
+  const tasks = useStore((s) => s.tasks);
+  const deps = useStore((s) => s.dependencies);
+  const users = useStore((s) => s.users);
+  const areas = useStore((s) => s.areas);
+  const setStatus = useStore((s) => s.setStatus);
+
+  const derived = deriveTasks(tasks, deps);
+  const task = detailTaskId ? derived.find((t) => t.id === detailTaskId) ?? null : null;
+  const owner = users.find((u) => u.id === task?.owner_id);
+  const area = areas.find((a) => a.id === task?.area_id);
+
+  return (
+    <Drawer open={open} onOpenChange={(v) => !v && openDetail(null)}>
+      <DrawerContent className="bg-surface border-border max-h-[92vh]">
+        {task && (
+          <>
+            <DrawerHeader className="text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <DrawerTitle className="text-foreground">{task.title}</DrawerTitle>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {area && <span className="rounded-full bg-card-raw px-2 py-0.5">{area.name}</span>}
+                    {owner && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-card-raw px-2 py-0.5">
+                        <span className="h-2 w-2 rounded-full" style={{ background: owner.color }} />
+                        {owner.name}
+                      </span>
+                    )}
+                    <span className="rounded-full bg-card-raw px-2 py-0.5 capitalize">{task.priority}</span>
+                    {task.isBlocked && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--amber)]/15 px-2 py-0.5 text-[var(--amber)]">
+                        <Lock className="h-3 w-3" /> blockiert
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Button size="icon" variant="ghost" onClick={() => openEdit(task.id)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
+            </DrawerHeader>
+            <div className="space-y-5 overflow-y-auto px-4 pb-6">
+              {task.description && (
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{task.description}</p>
+              )}
+
+              <section>
+                <h4 className="mb-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ArrowLeft className="h-3 w-3" /> Wartet auf
+                </h4>
+                {task.dependsOn.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/70">—</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {task.dependsOn.map((d) => (
+                      <li key={d.id}>
+                        <button
+                          onClick={() => openDetail(d.id)}
+                          className="flex w-full items-center justify-between rounded-xl bg-card-raw px-3 py-2 text-left text-sm"
+                        >
+                          <span className="truncate">{d.title}</span>
+                          <span className={"ml-2 text-xs " + (d.status === "done" ? "text-[var(--teal)]" : "text-[var(--amber)]")}>
+                            {d.status === "done" ? "✓ fertig" : "offen"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section>
+                <h4 className="mb-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ArrowRight className="h-3 w-3" /> Blockt
+                </h4>
+                {task.blocks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/70">—</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {task.blocks.map((d) => (
+                      <li key={d.id}>
+                        <button
+                          onClick={() => openDetail(d.id)}
+                          className="flex w-full items-center justify-between rounded-xl bg-card-raw px-3 py-2 text-left text-sm"
+                        >
+                          <span className="truncate">{d.title}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                {task.status !== "done" ? (
+                  <>
+                    {task.status !== "active" && !task.isBlocked && (
+                      <Button onClick={() => setStatus(task.id, "active")} className="gradient-brand rounded-full text-white">
+                        <Play className="mr-1 h-4 w-4" /> Aktiv
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => setStatus(task.id, "done")}
+                      disabled={task.isBlocked}
+                      className="rounded-full bg-[var(--teal)] text-black hover:opacity-90"
+                    >
+                      <CheckCircle2 className="mr-1 h-4 w-4" /> Erledigt
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="outline" onClick={() => setStatus(task.id, "open")} className="rounded-full">
+                    <RotateCcw className="mr-1 h-4 w-4" /> Wieder öffnen
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </DrawerContent>
+    </Drawer>
+  );
+}
