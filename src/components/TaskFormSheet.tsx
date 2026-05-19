@@ -64,7 +64,7 @@ export function TaskFormSheet() {
     if (!title.trim()) return toast.error("Titel fehlt");
     if (!areaId) return toast.error("Bereich fehlt");
     if (!ownerId) return toast.error("Zuständiger fehlt");
-    if (!noDeadline && !deadline) return toast.error("Frist oder „keine Frist" wählen");
+    if (!noDeadline && !deadline) return toast.error('Frist oder "keine Frist" wählen');
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
