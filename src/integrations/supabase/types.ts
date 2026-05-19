@@ -14,7 +14,282 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      areas: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          address: string | null
+          created_at: string
+          customer: string | null
+          id: string
+          name: string
+          status: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          customer?: string | null
+          id?: string
+          name: string
+          status?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          customer?: string | null
+          id?: string
+          name?: string
+          status?: string | null
+        }
+        Relationships: []
+      }
+      subtasks: {
+        Row: {
+          completed: boolean
+          created_at: string
+          id: string
+          sort_order: number
+          task_id: string
+          title: string
+        }
+        Insert: {
+          completed?: boolean
+          created_at?: string
+          id?: string
+          sort_order?: number
+          task_id: string
+          title: string
+        }
+        Update: {
+          completed?: boolean
+          created_at?: string
+          id?: string
+          sort_order?: number
+          task_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subtasks_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_dependencies: {
+        Row: {
+          created_at: string
+          depends_on_id: string
+          id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          depends_on_id: string
+          id?: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          depends_on_id?: string
+          id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_dependencies_depends_on_id_fkey"
+            columns: ["depends_on_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_dependencies_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          ai_generated: boolean
+          area_id: string | null
+          created_at: string
+          deadline: string | null
+          description: string | null
+          done_at: string | null
+          estimated_minutes: number | null
+          id: string
+          no_deadline: boolean
+          owner_id: string | null
+          priority: Database["public"]["Enums"]["task_priority"]
+          project_id: string | null
+          status: Database["public"]["Enums"]["task_status"]
+          title: string
+          tools_needed: string | null
+          updated_at: string
+        }
+        Insert: {
+          ai_generated?: boolean
+          area_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          done_at?: string | null
+          estimated_minutes?: number | null
+          id?: string
+          no_deadline?: boolean
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["task_priority"]
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          title: string
+          tools_needed?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ai_generated?: boolean
+          area_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          done_at?: string | null
+          estimated_minutes?: number | null
+          id?: string
+          no_deadline?: boolean
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["task_priority"]
+          project_id?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          title?: string
+          tools_needed?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_entries: {
+        Row: {
+          duration_minutes: number | null
+          ended_at: string | null
+          id: string
+          note: string | null
+          progress_pct: number | null
+          started_at: string
+          subtasks_completed: string[] | null
+          task_id: string
+          user_id: string | null
+        }
+        Insert: {
+          duration_minutes?: number | null
+          ended_at?: string | null
+          id?: string
+          note?: string | null
+          progress_pct?: number | null
+          started_at?: string
+          subtasks_completed?: string[] | null
+          task_id: string
+          user_id?: string | null
+        }
+        Update: {
+          duration_minutes?: number | null
+          ended_at?: string | null
+          id?: string
+          note?: string | null
+          progress_pct?: number | null
+          started_at?: string
+          subtasks_completed?: string[] | null
+          task_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          initials: string
+          name: string
+          role: string | null
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          initials: string
+          name: string
+          role?: string | null
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          initials?: string
+          name?: string
+          role?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +298,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      task_priority: "hoch" | "mittel" | "niedrig"
+      task_status: "open" | "active" | "blocked" | "done"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +426,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      task_priority: ["hoch", "mittel", "niedrig"],
+      task_status: ["open", "active", "blocked", "done"],
+    },
   },
 } as const
