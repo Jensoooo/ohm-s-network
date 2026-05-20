@@ -27,6 +27,7 @@ interface StoreState {
   openEdit: (id: string | null | "new") => void;
 
   createTask: (input: Partial<Task> & { title: string; area_id: string; owner_id: string; priority: Priority; deadline: string | null; no_deadline: boolean }, deps: string[]) => Promise<void>;
+  toggleDependency: (predecessorId: string, successorId: string) => Promise<void>;
   updateTask: (id: string, patch: Partial<Task>, deps?: string[]) => Promise<void>;
   setStatus: (id: string, status: TaskStatus) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
