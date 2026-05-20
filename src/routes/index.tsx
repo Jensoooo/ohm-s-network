@@ -2,18 +2,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useStore, sortAsap } from "@/lib/store";
 import { TaskCard, useDerivedTasks } from "@/components/TaskCard";
+import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import { Plus, Zap } from "lucide-react";
+import { Plus } from "lucide-react";
+import { ownerStyle } from "@/lib/colors";
 
 export const Route = createFileRoute("/")({
   component: TasksPage,
 });
 
 function TasksPage() {
-  const filterAreaId = useStore((s) => s.filterAreaId);
-  const filterOwnerId = useStore((s) => s.filterOwnerId);
-  const setFilterArea = useStore((s) => s.setFilterArea);
-  const setFilterOwner = useStore((s) => s.setFilterOwner);
+  const filterAreaIds = useStore((s) => s.filterAreaIds);
+  const filterOwnerIds = useStore((s) => s.filterOwnerIds);
+  const toggleFilterArea = useStore((s) => s.toggleFilterArea);
+  const toggleFilterOwner = useStore((s) => s.toggleFilterOwner);
+  const clearFilterAreas = useStore((s) => s.clearFilterAreas);
+  const clearFilterOwners = useStore((s) => s.clearFilterOwners);
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openEdit = useStore((s) => s.openEdit);
@@ -22,10 +26,10 @@ function TasksPage() {
 
   const visible = useMemo(() => {
     return derived
-      .filter((t) => filterAreaId === "all" || t.area_id === filterAreaId)
-      .filter((t) => filterOwnerId === "all" || t.owner_id === filterOwnerId)
+      .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
+      .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
       .sort(sortAsap);
-  }, [derived, filterAreaId, filterOwnerId]);
+  }, [derived, filterAreaIds, filterOwnerIds]);
 
   const openCount = visible.filter((t) => t.effectiveStatus !== "done").length;
 
@@ -33,12 +37,7 @@ function TasksPage() {
     <div className="mx-auto max-w-md px-4 pt-6">
       <header className="mb-4 flex items-center justify-between">
         <div>
-          <div className="inline-flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-brand">
-              <Zap className="h-4 w-4 text-white" />
-            </span>
-            <h1 className="text-2xl font-extrabold tracking-tight text-gradient">OHMERA</h1>
-          </div>
+          <Logo className="h-8 w-auto" />
           <p className="mt-1 text-xs text-muted-foreground">{openCount} offene Aufgabe{openCount === 1 ? "" : "n"}</p>
         </div>
         <Button onClick={() => openEdit("new")} size="icon" className="h-12 w-12 rounded-full gradient-brand text-white shadow-[0_8px_24px_-8px_#7c3aed]">
@@ -47,22 +46,25 @@ function TasksPage() {
       </header>
 
       <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
-        <Chip label="Alle Bereiche" active={filterAreaId === "all"} onClick={() => setFilterArea("all")} />
+        <Chip label="Alle" active={filterAreaIds.length === 0} onClick={clearFilterAreas} />
         {areas.map((a) => (
-          <Chip key={a.id} label={a.name} active={filterAreaId === a.id} onClick={() => setFilterArea(a.id)} />
+          <Chip key={a.id} label={a.name} active={filterAreaIds.includes(a.id)} onClick={() => toggleFilterArea(a.id)} />
         ))}
       </div>
       <div className="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
-        <Chip label="Alle" active={filterOwnerId === "all"} onClick={() => setFilterOwner("all")} />
-        {users.map((u) => (
-          <Chip
-            key={u.id}
-            label={u.name}
-            active={filterOwnerId === u.id}
-            onClick={() => setFilterOwner(u.id)}
-            dotColor={u.color}
-          />
-        ))}
+        <Chip label="Alle" active={filterOwnerIds.length === 0} onClick={clearFilterOwners} />
+        {users.map((u) => {
+          const st = ownerStyle(u);
+          return (
+            <Chip
+              key={u.id}
+              label={u.name}
+              active={filterOwnerIds.includes(u.id)}
+              onClick={() => toggleFilterOwner(u.id)}
+              dotColor={st.main}
+            />
+          );
+        })}
       </div>
 
       {visible.length === 0 ? (
