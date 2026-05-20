@@ -358,7 +358,14 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                         </span>
                       ) : <span />}
                       {dl && (
-                        <span className="text-[9px] font-semibold" style={{ color: dl.color }}>
+                        <span
+                          className="rounded-full px-2 py-[2px] text-[11px] font-bold leading-none tracking-tight"
+                          style={{
+                            color: dl.color,
+                            background: withAlpha(dl.color, 0.16),
+                            border: `1px solid ${withAlpha(dl.color, 0.45)}`,
+                          }}
+                        >
                           {dl.text}
                         </span>
                       )}
