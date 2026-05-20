@@ -107,6 +107,21 @@ export const useStore = create<StoreState>((set, get) => ({
     await get().load();
   },
 
+  toggleDependency: async (predecessorId, successorId) => {
+    const existing = get().dependencies.find(
+      (d) => d.task_id === successorId && d.depends_on_id === predecessorId,
+    );
+    if (existing) {
+      await supabase.from("task_dependencies").delete().eq("id", existing.id);
+    } else {
+      await supabase.from("task_dependencies").insert({
+        task_id: successorId,
+        depends_on_id: predecessorId,
+      });
+    }
+    await get().load();
+  },
+
   updateTask: async (id, patch, deps) => {
     await supabase.from("tasks").update(patch).eq("id", id);
     if (deps) {
