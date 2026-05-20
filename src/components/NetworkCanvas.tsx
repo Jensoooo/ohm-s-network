@@ -4,8 +4,8 @@ import { useDerivedTasks } from "./TaskCard";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
 import type { DerivedTask } from "@/lib/types";
 
-const NODE_W = 168;
-const NODE_H = 78;
+const NODE_W = 172;
+const NODE_H = 88;
 const COL_GAP = 80;
 const ROW_GAP = 24;
 const LANE_HEADER_H = 36;
