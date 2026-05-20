@@ -238,17 +238,20 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               let dash: string | undefined;
               let marker: string | undefined;
               if (crossLane) {
+                // bereichsübergreifend: dezent
                 stroke = "url(#cross-grad)";
-                strokeWidth = 2.5;
-                dash = "8 3";
+                strokeWidth = 1.25;
+                dash = "3 5";
+                marker = undefined;
               } else if (depDone) {
                 stroke = `url(#done-grad-${from.task.owner_id ?? ""})`;
                 strokeWidth = 2;
                 dash = undefined;
               } else {
-                stroke = "#4a3580";
-                strokeWidth = 1.5;
-                dash = "5 4";
+                // innerhalb eines Bereichs: deutlich sichtbar
+                stroke = "#a78bfa";
+                strokeWidth = 2.5;
+                dash = undefined;
                 marker = "url(#arrow-dim)";
               }
 
