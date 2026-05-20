@@ -283,13 +283,30 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
           const borderStyle = blocked || ghost ? "dashed" : "solid";
           const borderWidth = done && !ghost ? 1 : 1.5;
           const opacity = ghost ? 0.32 : done ? 0.38 : 1;
-          const boxShadow = !done && !blocked && !ghost ? `0 0 10px ${withAlpha(style.main, 0.35)}` : undefined;
+          const isSource = connectMode && connectSource === p.task.id;
+          const isConnectable = connectMode && !ghost && p.task.id !== connectSource;
+          const boxShadow = isSource
+            ? `0 0 0 2px white, 0 0 20px ${style.main}`
+            : isConnectable
+            ? `0 0 8px ${withAlpha(style.main, 0.4)}`
+            : !done && !blocked && !ghost
+            ? `0 0 10px ${withAlpha(style.main, 0.35)}`
+            : undefined;
+          const cursor = ghost ? "default" : connectMode ? "crosshair" : "pointer";
+          const dl = compactDeadline(p.task);
 
           return (
             <button
               key={p.task.id}
               data-node
-              onClick={ghost ? undefined : () => openDetail(p.task.id)}
+              onClick={
+                ghost
+                  ? undefined
+                  : () => {
+                      if (connectMode && onConnectTap) onConnectTap(p.task.id);
+                      else openDetail(p.task.id);
+                    }
+              }
               disabled={ghost}
               className="absolute cut-corner text-left transition-transform active:scale-[0.97]"
               style={{
@@ -301,7 +318,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 border: `${borderWidth}px ${borderStyle} ${borderColor}`,
                 opacity,
                 boxShadow,
-                cursor: ghost ? "default" : "pointer",
+                cursor,
               }}
             >
               {ghost && area && (
@@ -328,17 +345,25 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                         {p.task.title}
                       </p>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1">
                       {owner ? (
                         <span
-                          className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
                           style={{ background: style.main }}
                         >
                           {owner.initials}
                         </span>
                       ) : <span />}
+                      {dl && (
+                        <span className="text-[9px] font-semibold" style={{ color: dl.color }}>
+                          {dl.text}
+                        </span>
+                      )}
                       {area && (
-                        <span className="text-[9px] uppercase tracking-wide" style={{ color: style.accent }}>
+                        <span
+                          className="text-[9px] uppercase tracking-wide shrink-0 overflow-hidden text-ellipsis"
+                          style={{ color: style.accent, maxWidth: 60 }}
+                        >
                           {area.name}
                         </span>
                       )}
