@@ -99,7 +99,24 @@ function computeLayout(
   return { positioned, lanes, width, height };
 }
 
-export function NetworkCanvas() {
+interface NetworkCanvasProps {
+  connectMode?: boolean;
+  connectSource?: string | null;
+  onConnectTap?: (taskId: string) => void;
+}
+
+function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
+  if (task.no_deadline || !task.deadline) return null;
+  const d = new Date(task.deadline);
+  const diff = Math.round((d.getTime() - Date.now()) / 86400000);
+  const fmt = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  if (diff < 0) return { text: "überfällig", color: "#ef4444" };
+  if (diff === 0) return { text: "heute", color: "#f59e0b" };
+  if (diff <= 3) return { text: fmt, color: "#f59e0b" };
+  return { text: fmt, color: "#94a3b8" };
+}
+
+export function NetworkCanvas({ connectMode = false, connectSource = null, onConnectTap }: NetworkCanvasProps = {}) {
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openDetail = useStore((s) => s.openDetail);
