@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { NetworkCanvas } from "@/components/NetworkCanvas";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
 import { ownerStyle } from "@/lib/colors";
-import { Plus } from "lucide-react";
+import { Plus, Link2, Unlink } from "lucide-react";
 
 export const Route = createFileRoute("/netzplan")({
   component: NetzplanPage,
@@ -19,17 +20,55 @@ function NetzplanPage() {
   const toggleFilterOwner = useStore((s) => s.toggleFilterOwner);
   const clearFilterAreas = useStore((s) => s.clearFilterAreas);
   const clearFilterOwners = useStore((s) => s.clearFilterOwners);
+  const toggleDependency = useStore((s) => s.toggleDependency);
+
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectSource, setConnectSource] = useState<string | null>(null);
+  const exitConnectMode = () => { setConnectMode(false); setConnectSource(null); };
+
+  const handleConnectTap = async (taskId: string) => {
+    if (!connectSource) {
+      setConnectSource(taskId);
+    } else if (connectSource === taskId) {
+      setConnectSource(null);
+    } else {
+      await toggleDependency(connectSource, taskId);
+      setConnectSource(null);
+    }
+  };
 
   return (
     <div className="flex h-[100dvh] flex-col">
       <header className="flex items-center justify-between px-4 pt-6 pb-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-gradient">Netzplan</h1>
-          <p className="text-xs text-muted-foreground">Ziehen zum Verschieben</p>
+          <p className="text-xs text-muted-foreground">
+            {connectMode
+              ? connectSource
+                ? "Zweiten Task antippen zum Verbinden"
+                : "Ersten Task antippen"
+              : "Ziehen zum Verschieben"}
+          </p>
         </div>
-        <Button onClick={() => openEdit("new")} size="icon" className="h-11 w-11 rounded-full gradient-brand text-white">
-          <Plus className="h-5 w-5" />
-        </Button>
+        <div className="flex gap-2">
+          {connectMode && (
+            <Button onClick={exitConnectMode} variant="outline" className="rounded-full border-border text-xs px-3 py-1.5 h-auto">
+              Fertig
+            </Button>
+          )}
+          <Button
+            onClick={() => { setConnectMode((v) => !v); setConnectSource(null); }}
+            size="icon"
+            className={"h-11 w-11 rounded-full " + (connectMode ? "bg-[#14b8a6] text-white" : "gradient-brand text-white")}
+          >
+            {connectMode ? <Unlink className="h-5 w-5" /> : <Link2 className="h-5 w-5" />}
+          </Button>
+          {!connectMode && (
+            <Button onClick={() => openEdit("new")} size="icon" className="h-11 w-11 rounded-full gradient-brand text-white">
+              <Plus className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
       </header>
       <div className="px-4 pb-2 space-y-2">
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
@@ -55,11 +94,16 @@ function NetzplanPage() {
         </div>
       </div>
       <div className="flex-1 overflow-hidden">
-        <NetworkCanvas />
+        <NetworkCanvas
+          connectMode={connectMode}
+          connectSource={connectSource}
+          onConnectTap={handleConnectTap}
+        />
       </div>
     </div>
   );
 }
+
 
 function Chip({ label, active, onClick, dotColor }: { label: string; active: boolean; onClick: () => void; dotColor?: string }) {
   return (

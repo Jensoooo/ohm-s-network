@@ -27,6 +27,7 @@ interface StoreState {
   openEdit: (id: string | null | "new") => void;
 
   createTask: (input: Partial<Task> & { title: string; area_id: string; owner_id: string; priority: Priority; deadline: string | null; no_deadline: boolean }, deps: string[]) => Promise<void>;
+  toggleDependency: (predecessorId: string, successorId: string) => Promise<void>;
   updateTask: (id: string, patch: Partial<Task>, deps?: string[]) => Promise<void>;
   setStatus: (id: string, status: TaskStatus) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -102,6 +103,21 @@ export const useStore = create<StoreState>((set, get) => ({
       await supabase.from("task_dependencies").insert(
         deps.map((dep) => ({ task_id: data.id, depends_on_id: dep })),
       );
+    }
+    await get().load();
+  },
+
+  toggleDependency: async (predecessorId, successorId) => {
+    const existing = get().dependencies.find(
+      (d) => d.task_id === successorId && d.depends_on_id === predecessorId,
+    );
+    if (existing) {
+      await supabase.from("task_dependencies").delete().eq("id", existing.id);
+    } else {
+      await supabase.from("task_dependencies").insert({
+        task_id: successorId,
+        depends_on_id: predecessorId,
+      });
     }
     await get().load();
   },

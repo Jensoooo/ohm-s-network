@@ -99,7 +99,24 @@ function computeLayout(
   return { positioned, lanes, width, height };
 }
 
-export function NetworkCanvas() {
+interface NetworkCanvasProps {
+  connectMode?: boolean;
+  connectSource?: string | null;
+  onConnectTap?: (taskId: string) => void;
+}
+
+function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
+  if (task.no_deadline || !task.deadline) return null;
+  const d = new Date(task.deadline);
+  const diff = Math.round((d.getTime() - Date.now()) / 86400000);
+  const fmt = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  if (diff < 0) return { text: "überfällig", color: "#ef4444" };
+  if (diff === 0) return { text: "heute", color: "#f59e0b" };
+  if (diff <= 3) return { text: fmt, color: "#f59e0b" };
+  return { text: fmt, color: "#94a3b8" };
+}
+
+export function NetworkCanvas({ connectMode = false, connectSource = null, onConnectTap }: NetworkCanvasProps = {}) {
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openDetail = useStore((s) => s.openDetail);
@@ -163,7 +180,8 @@ export function NetworkCanvas() {
   return (
     <div
       ref={containerRef}
-      className="h-full w-full touch-none overflow-hidden bg-surface select-none"
+      className="h-full w-full touch-none overflow-hidden select-none transition-colors duration-300"
+      style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -265,13 +283,30 @@ export function NetworkCanvas() {
           const borderStyle = blocked || ghost ? "dashed" : "solid";
           const borderWidth = done && !ghost ? 1 : 1.5;
           const opacity = ghost ? 0.32 : done ? 0.38 : 1;
-          const boxShadow = !done && !blocked && !ghost ? `0 0 10px ${withAlpha(style.main, 0.35)}` : undefined;
+          const isSource = connectMode && connectSource === p.task.id;
+          const isConnectable = connectMode && !ghost && p.task.id !== connectSource;
+          const boxShadow = isSource
+            ? `0 0 0 2px white, 0 0 20px ${style.main}`
+            : isConnectable
+            ? `0 0 8px ${withAlpha(style.main, 0.4)}`
+            : !done && !blocked && !ghost
+            ? `0 0 10px ${withAlpha(style.main, 0.35)}`
+            : undefined;
+          const cursor = ghost ? "default" : connectMode ? "crosshair" : "pointer";
+          const dl = compactDeadline(p.task);
 
           return (
             <button
               key={p.task.id}
               data-node
-              onClick={ghost ? undefined : () => openDetail(p.task.id)}
+              onClick={
+                ghost
+                  ? undefined
+                  : () => {
+                      if (connectMode && onConnectTap) onConnectTap(p.task.id);
+                      else openDetail(p.task.id);
+                    }
+              }
               disabled={ghost}
               className="absolute cut-corner text-left transition-transform active:scale-[0.97]"
               style={{
@@ -283,7 +318,7 @@ export function NetworkCanvas() {
                 border: `${borderWidth}px ${borderStyle} ${borderColor}`,
                 opacity,
                 boxShadow,
-                cursor: ghost ? "default" : "pointer",
+                cursor,
               }}
             >
               {ghost && area && (
@@ -310,17 +345,25 @@ export function NetworkCanvas() {
                         {p.task.title}
                       </p>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1">
                       {owner ? (
                         <span
-                          className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
                           style={{ background: style.main }}
                         >
                           {owner.initials}
                         </span>
                       ) : <span />}
+                      {dl && (
+                        <span className="text-[9px] font-semibold" style={{ color: dl.color }}>
+                          {dl.text}
+                        </span>
+                      )}
                       {area && (
-                        <span className="text-[9px] uppercase tracking-wide" style={{ color: style.accent }}>
+                        <span
+                          className="text-[9px] uppercase tracking-wide shrink-0 overflow-hidden text-ellipsis"
+                          style={{ color: style.accent, maxWidth: 60 }}
+                        >
                           {area.name}
                         </span>
                       )}
