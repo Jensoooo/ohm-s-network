@@ -180,7 +180,8 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   return (
     <div
       ref={containerRef}
-      className="h-full w-full touch-none overflow-hidden bg-surface select-none"
+      className="h-full w-full touch-none overflow-hidden select-none transition-colors duration-300"
+      style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
