@@ -10,17 +10,19 @@ interface StoreState {
   dependencies: Dependency[];
   currentUserId: string | null;
   loaded: boolean;
-  // filters
-  filterAreaId: string | "all";
-  filterOwnerId: string | "all";
-  // sheet state (single source of truth)
+  // multi-select filters (empty array = all)
+  filterAreaIds: string[];
+  filterOwnerIds: string[];
+  // sheet state
   detailTaskId: string | null;
   editingTaskId: string | null | "new";
 
   load: () => Promise<void>;
   setCurrentUser: (id: string) => void;
-  setFilterArea: (id: string | "all") => void;
-  setFilterOwner: (id: string | "all") => void;
+  toggleFilterArea: (id: string) => void;
+  toggleFilterOwner: (id: string) => void;
+  clearFilterAreas: () => void;
+  clearFilterOwners: () => void;
   openDetail: (id: string | null) => void;
   openEdit: (id: string | null | "new") => void;
 
@@ -38,8 +40,8 @@ export const useStore = create<StoreState>((set, get) => ({
   dependencies: [],
   currentUserId: null,
   loaded: false,
-  filterAreaId: "all",
-  filterOwnerId: "all",
+  filterAreaIds: [],
+  filterOwnerIds: [],
   detailTaskId: null,
   editingTaskId: null,
 
@@ -63,8 +65,20 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setCurrentUser: (id) => set({ currentUserId: id }),
-  setFilterArea: (id) => set({ filterAreaId: id }),
-  setFilterOwner: (id) => set({ filterOwnerId: id }),
+  toggleFilterArea: (id) =>
+    set((s) => ({
+      filterAreaIds: s.filterAreaIds.includes(id)
+        ? s.filterAreaIds.filter((x) => x !== id)
+        : [...s.filterAreaIds, id],
+    })),
+  toggleFilterOwner: (id) =>
+    set((s) => ({
+      filterOwnerIds: s.filterOwnerIds.includes(id)
+        ? s.filterOwnerIds.filter((x) => x !== id)
+        : [...s.filterOwnerIds, id],
+    })),
+  clearFilterAreas: () => set({ filterAreaIds: [] }),
+  clearFilterOwners: () => set({ filterOwnerIds: [] }),
   openDetail: (id) => set({ detailTaskId: id }),
   openEdit: (id) => set({ editingTaskId: id }),
 
@@ -117,12 +131,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 }));
 
-// ---------- Derived selectors (single source of truth) ----------
+// ---------- Derived ----------
 
-export function deriveTasks(
-  tasks: Task[],
-  dependencies: Dependency[],
-): DerivedTask[] {
+export function deriveTasks(tasks: Task[], dependencies: Dependency[]): DerivedTask[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const dependsMap = new Map<string, Task[]>();
   const blocksMap = new Map<string, Task[]>();
@@ -135,13 +146,28 @@ export function deriveTasks(
     if (!blocksMap.has(d.depends_on_id)) blocksMap.set(d.depends_on_id, []);
     blocksMap.get(d.depends_on_id)!.push(waiter);
   }
+
+  // Topological rank: depth of longest dep chain
+  const rank = new Map<string, number>();
+  const compute = (id: string, stack: Set<string>): number => {
+    if (rank.has(id)) return rank.get(id)!;
+    if (stack.has(id)) return 0;
+    stack.add(id);
+    const deps = dependsMap.get(id) ?? [];
+    const r = deps.length ? Math.max(...deps.map((d) => compute(d.id, stack))) + 1 : 0;
+    stack.delete(id);
+    rank.set(id, r);
+    return r;
+  };
+  for (const t of tasks) compute(t.id, new Set());
+
   return tasks.map((t) => {
     const dependsOn = dependsMap.get(t.id) ?? [];
     const blocks = blocksMap.get(t.id) ?? [];
     const isBlocked = t.status !== "done" && dependsOn.some((d) => d.status !== "done");
     const effectiveStatus: TaskStatus =
       t.status === "done" ? "done" : isBlocked ? "blocked" : t.status;
-    return { ...t, dependsOn, blocks, isBlocked, effectiveStatus };
+    return { ...t, dependsOn, blocks, isBlocked, effectiveStatus, topoRank: rank.get(t.id) ?? 0 };
   });
 }
 
@@ -151,8 +177,10 @@ export function sortAsap(a: DerivedTask, b: DerivedTask): number {
   // done at bottom
   if (a.effectiveStatus === "done" && b.effectiveStatus !== "done") return 1;
   if (b.effectiveStatus === "done" && a.effectiveStatus !== "done") return -1;
-  // blocked after non-blocked
+  // unblocked before blocked
   if (a.isBlocked !== b.isBlocked) return a.isBlocked ? 1 : -1;
+  // topological: predecessors before successors
+  if (a.topoRank !== b.topoRank) return a.topoRank - b.topoRank;
   // priority
   if (a.priority !== b.priority) return priorityRank[a.priority] - priorityRank[b.priority];
   // deadline soonest first; no_deadline last

@@ -49,8 +49,10 @@ export interface Dependency {
 }
 
 export interface DerivedTask extends Task {
-  dependsOn: Task[];      // Vorgänger (muss erst fertig sein)
-  blocks: Task[];         // Nachfolger (warten auf diese)
+  dependsOn: Task[];
+  blocks: Task[];
   isBlocked: boolean;
-  effectiveStatus: TaskStatus; // 'blocked' wenn dependsOn nicht alle done
+  effectiveStatus: TaskStatus;
+  topoRank: number;
 }
+
