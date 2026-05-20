@@ -195,7 +195,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               <stop offset="100%" stopColor="#c084fc" />
             </linearGradient>
             <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M0,0 L10,5 L0,10 z" fill="#4a3580" />
+              <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa" />
             </marker>
             {/* per-owner gradient for done edges */}
             {users.map((u) => {
