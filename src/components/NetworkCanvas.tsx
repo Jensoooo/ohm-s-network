@@ -4,8 +4,8 @@ import { useDerivedTasks } from "./TaskCard";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
 import type { DerivedTask } from "@/lib/types";
 
-const NODE_W = 168;
-const NODE_H = 78;
+const NODE_W = 172;
+const NODE_H = 88;
 const COL_GAP = 80;
 const ROW_GAP = 24;
 const LANE_HEADER_H = 36;
@@ -195,7 +195,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               <stop offset="100%" stopColor="#c084fc" />
             </linearGradient>
             <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M0,0 L10,5 L0,10 z" fill="#4a3580" />
+              <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa" />
             </marker>
             {/* per-owner gradient for done edges */}
             {users.map((u) => {
@@ -238,17 +238,20 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               let dash: string | undefined;
               let marker: string | undefined;
               if (crossLane) {
+                // bereichsübergreifend: dezent
                 stroke = "url(#cross-grad)";
-                strokeWidth = 2.5;
-                dash = "8 3";
+                strokeWidth = 1.25;
+                dash = "3 5";
+                marker = undefined;
               } else if (depDone) {
                 stroke = `url(#done-grad-${from.task.owner_id ?? ""})`;
                 strokeWidth = 2;
                 dash = undefined;
               } else {
-                stroke = "#4a3580";
-                strokeWidth = 1.5;
-                dash = "5 4";
+                // innerhalb eines Bereichs: deutlich sichtbar
+                stroke = "#a78bfa";
+                strokeWidth = 2.5;
+                dash = undefined;
                 marker = "url(#arrow-dim)";
               }
 
@@ -355,7 +358,14 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                         </span>
                       ) : <span />}
                       {dl && (
-                        <span className="text-[9px] font-semibold" style={{ color: dl.color }}>
+                        <span
+                          className="rounded-full px-2 py-[2px] text-[11px] font-bold leading-none tracking-tight"
+                          style={{
+                            color: dl.color,
+                            background: withAlpha(dl.color, 0.16),
+                            border: `1px solid ${withAlpha(dl.color, 0.45)}`,
+                          }}
+                        >
                           {dl.text}
                         </span>
                       )}

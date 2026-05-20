@@ -13,9 +13,14 @@ const FALLBACK: OwnerStyle = {
 };
 
 const BY_NAME: Record<string, OwnerStyle> = {
-  Ben: { main: "#14b8a6", bg: "rgba(20,184,166,0.13)", accent: "#2dd4bf" },
-  Jens: { main: "#7c3aed", bg: "rgba(124,58,237,0.13)", accent: "#c084fc" },
-  Stefan: { main: "#9333ea", bg: "rgba(147,51,234,0.13)", accent: "#d8b4fe" },
+  // Ben: grün-türkis
+  Ben: { main: "#10b981", bg: "rgba(16,185,129,0.13)", accent: "#34d399" },
+  // Jens: blau-türkis
+  Jens: { main: "#06b6d4", bg: "rgba(6,182,212,0.13)", accent: "#22d3ee" },
+  // Stefan: dunkles beige
+  Stefan: { main: "#a8895c", bg: "rgba(168,137,92,0.14)", accent: "#d4b896" },
+  // Beide: lila (Firmenfarbe)
+  Beide: { main: "#9333ea", bg: "rgba(147,51,234,0.13)", accent: "#c084fc" },
   Extern: { main: "#f59e0b", bg: "rgba(245,158,11,0.13)", accent: "#fcd34d" },
 };
 
