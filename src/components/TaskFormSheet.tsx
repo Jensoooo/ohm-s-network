@@ -20,6 +20,7 @@ export function TaskFormSheet() {
   const deps = useStore((s) => s.dependencies);
   const users = useStore((s) => s.users);
   const areas = useStore((s) => s.areas);
+  const projects = useStore((s) => s.projects);
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
@@ -33,9 +34,11 @@ export function TaskFormSheet() {
   const [priority, setPriority] = useState<Priority>("mittel");
   const [ownerId, setOwnerId] = useState<string>("");
   const [areaId, setAreaId] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("");
   const [noDeadline, setNoDeadline] = useState(false);
   const [deadline, setDeadline] = useState<string>("");
   const [selectedDeps, setSelectedDeps] = useState<string[]>([]);
+
 
   useEffect(() => {
     if (!open) return;
