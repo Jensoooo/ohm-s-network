@@ -173,6 +173,39 @@ export function TaskFormSheet() {
               ))}
             </div>
           </div>
+          <div>
+            <Label>Baustelle</Label>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setProjectId("")}
+                className={
+                  "rounded-full border px-3 py-1.5 text-xs transition " +
+                  (projectId === ""
+                    ? "border-primary bg-primary/20 text-foreground"
+                    : "border-border bg-card-raw text-muted-foreground")
+                }
+              >
+                Keine Baustelle
+              </button>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setProjectId(p.id)}
+                  className={
+                    "rounded-full border px-3 py-1.5 text-xs transition " +
+                    (projectId === p.id
+                      ? "gradient-brand text-white border-transparent"
+                      : "border-border bg-card-raw text-muted-foreground")
+                  }
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <Label htmlFor="nd">Keine Frist</Label>
             <Switch id="nd" checked={noDeadline} onCheckedChange={setNoDeadline} />
