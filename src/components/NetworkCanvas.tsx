@@ -496,6 +496,36 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
             </button>
           );
         })}
+
+        {/* Drag ghost */}
+        {nodeDrag && (() => {
+          const p = posById.get(nodeDrag.taskId);
+          if (!p) return null;
+          const owner = users.find((u) => u.id === p.task.owner_id);
+          const st = ownerStyle(owner);
+          return (
+            <div
+              className="absolute pointer-events-none cut-corner"
+              style={{
+                left: nodeDrag.cx - NODE_W / 2,
+                top: nodeDrag.cy - NODE_H / 2,
+                width: NODE_W,
+                height: NODE_H,
+                background: st.bg,
+                border: `1.5px solid ${st.main}`,
+                opacity: 0.6,
+                boxShadow: `0 12px 32px ${withAlpha(st.main, 0.5)}`,
+                zIndex: 50,
+              }}
+            >
+              <div className="flex h-full items-start p-2">
+                <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
+                  {p.task.title}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
