@@ -14,12 +14,16 @@ export const Route = createFileRoute("/")({
 function TasksPage() {
   const filterAreaIds = useStore((s) => s.filterAreaIds);
   const filterOwnerIds = useStore((s) => s.filterOwnerIds);
+  const filterProjectIds = useStore((s) => s.filterProjectIds);
   const toggleFilterArea = useStore((s) => s.toggleFilterArea);
   const toggleFilterOwner = useStore((s) => s.toggleFilterOwner);
+  const toggleFilterProject = useStore((s) => s.toggleFilterProject);
   const clearFilterAreas = useStore((s) => s.clearFilterAreas);
   const clearFilterOwners = useStore((s) => s.clearFilterOwners);
+  const clearFilterProjects = useStore((s) => s.clearFilterProjects);
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
+  const projects = useStore((s) => s.projects);
   const openEdit = useStore((s) => s.openEdit);
 
   const derived = useDerivedTasks();
@@ -28,8 +32,9 @@ function TasksPage() {
     return derived
       .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
       .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
+      .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
       .sort(sortAsap);
-  }, [derived, filterAreaIds, filterOwnerIds]);
+  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds]);
 
   const openCount = visible.filter((t) => t.effectiveStatus !== "done").length;
 
@@ -45,13 +50,13 @@ function TasksPage() {
         </Button>
       </header>
 
-      <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+      <div className="mb-2 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
         <Chip label="Alle" active={filterAreaIds.length === 0} onClick={clearFilterAreas} />
         {areas.map((a) => (
           <Chip key={a.id} label={a.name} active={filterAreaIds.includes(a.id)} onClick={() => toggleFilterArea(a.id)} />
         ))}
       </div>
-      <div className="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+      <div className="mb-2 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
         <Chip label="Alle" active={filterOwnerIds.length === 0} onClick={clearFilterOwners} />
         {users.map((u) => {
           const st = ownerStyle(u);
@@ -66,6 +71,13 @@ function TasksPage() {
           );
         })}
       </div>
+      <div className="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+        <Chip label="Alle Baustellen" active={filterProjectIds.length === 0} onClick={clearFilterProjects} />
+        {projects.map((p) => (
+          <Chip key={p.id} label={p.name} active={filterProjectIds.includes(p.id)} onClick={() => toggleFilterProject(p.id)} />
+        ))}
+      </div>
+
 
       {visible.length === 0 ? (
         <div className="mt-16 text-center text-muted-foreground">

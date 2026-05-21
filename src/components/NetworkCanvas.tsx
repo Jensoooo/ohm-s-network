@@ -124,6 +124,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   const updateTask = useStore((s) => s.updateTask);
   const filterAreaIds = useStore((s) => s.filterAreaIds);
   const filterOwnerIds = useStore((s) => s.filterOwnerIds);
+  const filterProjectIds = useStore((s) => s.filterProjectIds);
   const derived = useDerivedTasks();
 
   const visibleTaskIds = useMemo(() => {
@@ -131,11 +132,13 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
       derived
         .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
         .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
+        .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
         .map((t) => t.id),
     );
-  }, [derived, filterAreaIds, filterOwnerIds]);
+  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds]);
 
-  const showGhosts = filterAreaIds.length > 0 || filterOwnerIds.length > 0;
+  const showGhosts = filterAreaIds.length > 0 || filterOwnerIds.length > 0 || filterProjectIds.length > 0;
+
 
   const { positioned, lanes, width, height } = useMemo(
     () => computeLayout(derived, areas, visibleTaskIds, showGhosts),

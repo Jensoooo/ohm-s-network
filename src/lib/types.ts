@@ -15,12 +15,32 @@ export interface Area {
   sort_order: number;
 }
 
+export interface FloorConfig {
+  id: string;
+  name: string;
+  rooms: { type: string; count: number }[];
+}
+
 export interface Project {
   id: string;
   name: string;
+  customer_id: string | null;
   customer: string | null;
   address: string | null;
   status: string | null;
+  template_type: string | null;
+  floors: FloorConfig[];
+  created_at: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface Task {
@@ -55,4 +75,3 @@ export interface DerivedTask extends Task {
   effectiveStatus: TaskStatus;
   topoRank: number;
 }
-

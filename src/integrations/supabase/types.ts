@@ -35,32 +35,82 @@ export type Database = {
         }
         Relationships: []
       }
+      customers: {
+        Row: {
+          address: string | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           address: string | null
           created_at: string
           customer: string | null
+          customer_id: string | null
+          floors: Json
           id: string
           name: string
           status: string | null
+          template_type: string | null
         }
         Insert: {
           address?: string | null
           created_at?: string
           customer?: string | null
+          customer_id?: string | null
+          floors?: Json
           id?: string
           name: string
           status?: string | null
+          template_type?: string | null
         }
         Update: {
           address?: string | null
           created_at?: string
           customer?: string | null
+          customer_id?: string | null
+          floors?: Json
           id?: string
           name?: string
           status?: string | null
+          template_type?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "projects_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subtasks: {
         Row: {

@@ -20,6 +20,7 @@ export function TaskFormSheet() {
   const deps = useStore((s) => s.dependencies);
   const users = useStore((s) => s.users);
   const areas = useStore((s) => s.areas);
+  const projects = useStore((s) => s.projects);
   const createTask = useStore((s) => s.createTask);
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
@@ -33,9 +34,11 @@ export function TaskFormSheet() {
   const [priority, setPriority] = useState<Priority>("mittel");
   const [ownerId, setOwnerId] = useState<string>("");
   const [areaId, setAreaId] = useState<string>("");
+  const [projectId, setProjectId] = useState<string>("");
   const [noDeadline, setNoDeadline] = useState(false);
   const [deadline, setDeadline] = useState<string>("");
   const [selectedDeps, setSelectedDeps] = useState<string[]>([]);
+
 
   useEffect(() => {
     if (!open) return;
@@ -45,15 +48,18 @@ export function TaskFormSheet() {
       setPriority(existing.priority);
       setOwnerId(existing.owner_id ?? "");
       setAreaId(existing.area_id ?? "");
+      setProjectId(existing.project_id ?? "");
       setNoDeadline(existing.no_deadline);
       setDeadline(existing.deadline ? existing.deadline.slice(0, 10) : "");
       setSelectedDeps(deps.filter((d) => d.task_id === existing.id).map((d) => d.depends_on_id));
     } else {
       setTitle(""); setDescription(""); setPriority("mittel");
       setOwnerId(users[0]?.id ?? ""); setAreaId(areas[0]?.id ?? "");
+      setProjectId("");
       setNoDeadline(false); setDeadline(""); setSelectedDeps([]);
     }
   }, [open, existing, users, areas, deps]);
+
 
   const candidateDeps = useMemo(
     () => tasks.filter((t) => !existing || t.id !== existing.id),
@@ -71,9 +77,11 @@ export function TaskFormSheet() {
       priority,
       owner_id: ownerId,
       area_id: areaId,
+      project_id: projectId || null,
       deadline: noDeadline ? null : new Date(deadline).toISOString(),
       no_deadline: noDeadline,
     };
+
     if (existing) {
       await updateTask(existing.id, payload, selectedDeps);
       toast.success("Gespeichert");
@@ -165,6 +173,39 @@ export function TaskFormSheet() {
               ))}
             </div>
           </div>
+          <div>
+            <Label>Baustelle</Label>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setProjectId("")}
+                className={
+                  "rounded-full border px-3 py-1.5 text-xs transition " +
+                  (projectId === ""
+                    ? "border-primary bg-primary/20 text-foreground"
+                    : "border-border bg-card-raw text-muted-foreground")
+                }
+              >
+                Keine Baustelle
+              </button>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setProjectId(p.id)}
+                  className={
+                    "rounded-full border px-3 py-1.5 text-xs transition " +
+                    (projectId === p.id
+                      ? "gradient-brand text-white border-transparent"
+                      : "border-border bg-card-raw text-muted-foreground")
+                  }
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <Label htmlFor="nd">Keine Frist</Label>
             <Switch id="nd" checked={noDeadline} onCheckedChange={setNoDeadline} />

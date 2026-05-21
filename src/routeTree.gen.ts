@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TimerRouteImport } from './routes/timer'
 import { Route as ProfilRouteImport } from './routes/profil'
 import { Route as NetzplanRouteImport } from './routes/netzplan'
+import { Route as BaustellenRouteImport } from './routes/baustellen'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TimerRoute = TimerRouteImport.update({
@@ -29,6 +30,11 @@ const NetzplanRoute = NetzplanRouteImport.update({
   path: '/netzplan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BaustellenRoute = BaustellenRouteImport.update({
+  id: '/baustellen',
+  path: '/baustellen',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -37,12 +43,14 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/baustellen': typeof BaustellenRoute
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/baustellen': typeof BaustellenRoute
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/baustellen': typeof BaustellenRoute
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/netzplan' | '/profil' | '/timer'
+  fullPaths: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/netzplan' | '/profil' | '/timer'
-  id: '__root__' | '/' | '/netzplan' | '/profil' | '/timer'
+  to: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
+  id: '__root__' | '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BaustellenRoute: typeof BaustellenRoute
   NetzplanRoute: typeof NetzplanRoute
   ProfilRoute: typeof ProfilRoute
   TimerRoute: typeof TimerRoute
@@ -92,6 +102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NetzplanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/baustellen': {
+      id: '/baustellen'
+      path: '/baustellen'
+      fullPath: '/baustellen'
+      preLoaderRoute: typeof BaustellenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BaustellenRoute: BaustellenRoute,
   NetzplanRoute: NetzplanRoute,
   ProfilRoute: ProfilRoute,
   TimerRoute: TimerRoute,
