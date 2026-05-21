@@ -302,14 +302,26 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
           </defs>
 
           {/* Lane backgrounds */}
-          {lanes.map((l) => (
-            <g key={l.id}>
-              <rect x={4} y={l.yTop} width={width - 8} height={l.height} rx={14} fill="#0f0228" stroke="#1f0a3d" />
-              <text x={18} y={l.yTop + 22} fill="#a78bfa" fontSize="12" fontWeight="700" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
-                {l.name}
-              </text>
-            </g>
-          ))}
+          {lanes.map((l) => {
+            const isDrop = nodeDrag?.hoverLaneId === l.id;
+            return (
+              <g key={l.id} style={{ transition: "opacity 0.15s" }}>
+                <rect
+                  x={4}
+                  y={l.yTop}
+                  width={width - 8}
+                  height={l.height}
+                  rx={14}
+                  fill={isDrop ? "rgba(124,58,237,0.08)" : "#0f0228"}
+                  stroke={isDrop ? "rgba(124,58,237,0.4)" : "#1f0a3d"}
+                  strokeWidth={isDrop ? 1.5 : 1}
+                />
+                <text x={18} y={l.yTop + 22} fill="#a78bfa" fontSize="12" fontWeight="700" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
+                  {l.name}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Edges */}
           {positioned.flatMap((p) =>
