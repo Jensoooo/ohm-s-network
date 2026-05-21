@@ -140,13 +140,14 @@ function BaustellenPage() {
                         return (
                           <span
                             key={u!.id}
-                            className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2"
-                            style={{ background: st.main, ringColor: "#150535" } as React.CSSProperties}
+                            className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                            style={{ background: st.main, boxShadow: "0 0 0 2px #150535" }}
                           >
                             {u!.initials}
                           </span>
                         );
                       })}
+
                       {owners.length === 0 && (
                         <span className="text-[11px] text-muted-foreground">Niemand zugewiesen</span>
                       )}
