@@ -77,9 +77,11 @@ export function TaskFormSheet() {
       priority,
       owner_id: ownerId,
       area_id: areaId,
+      project_id: projectId || null,
       deadline: noDeadline ? null : new Date(deadline).toISOString(),
       no_deadline: noDeadline,
     };
+
     if (existing) {
       await updateTask(existing.id, payload, selectedDeps);
       toast.success("Gespeichert");
