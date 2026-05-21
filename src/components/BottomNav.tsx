@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { ListChecks, Network, Timer, User } from "lucide-react";
+import { Building2, ListChecks, Network, Timer, User } from "lucide-react";
 
 const items = [
   { to: "/", label: "Aufgaben", icon: ListChecks },
   { to: "/netzplan", label: "Netzplan", icon: Network },
+  { to: "/baustellen", label: "Baustellen", icon: Building2 },
   { to: "/timer", label: "Timer", icon: Timer },
   { to: "/profil", label: "Profil", icon: User },
 ] as const;
@@ -16,7 +17,7 @@ export function BottomNav() {
           <li key={to} className="flex-1">
             <Link
               to={to}
-              className="flex flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium text-muted-foreground transition-colors data-[status=active]:text-foreground"
+              className="flex flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] font-medium text-muted-foreground transition-colors data-[status=active]:text-foreground"
               activeProps={{ className: "text-foreground" }}
               activeOptions={{ exact: true }}
             >
