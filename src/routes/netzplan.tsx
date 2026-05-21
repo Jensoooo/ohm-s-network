@@ -97,7 +97,14 @@ function NetzplanPage() {
             );
           })}
         </div>
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+          <Chip label="Alle Baustellen" active={filterProjectIds.length === 0} onClick={clearFilterProjects} />
+          {projects.map((p) => (
+            <Chip key={p.id} label={p.name} active={filterProjectIds.includes(p.id)} onClick={() => toggleFilterProject(p.id)} />
+          ))}
+        </div>
       </div>
+
       <div className="flex-1 overflow-hidden">
         <NetworkCanvas
           connectMode={connectMode}
