@@ -14,13 +14,18 @@ function NetzplanPage() {
   const openEdit = useStore((s) => s.openEdit);
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
+  const projects = useStore((s) => s.projects);
   const filterAreaIds = useStore((s) => s.filterAreaIds);
   const filterOwnerIds = useStore((s) => s.filterOwnerIds);
+  const filterProjectIds = useStore((s) => s.filterProjectIds);
   const toggleFilterArea = useStore((s) => s.toggleFilterArea);
   const toggleFilterOwner = useStore((s) => s.toggleFilterOwner);
+  const toggleFilterProject = useStore((s) => s.toggleFilterProject);
   const clearFilterAreas = useStore((s) => s.clearFilterAreas);
   const clearFilterOwners = useStore((s) => s.clearFilterOwners);
+  const clearFilterProjects = useStore((s) => s.clearFilterProjects);
   const toggleDependency = useStore((s) => s.toggleDependency);
+
 
   const [connectMode, setConnectMode] = useState(false);
   const [connectSource, setConnectSource] = useState<string | null>(null);
