@@ -186,14 +186,32 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   };
   const onPointerUp = () => { dragRef.current = null; };
 
-  // Global listeners for node drag
-  useEffect(() => {
-    const init = nodeDragInit;
-    const onMove = (e: PointerEvent) => {
-      const s = init.current;
-      if (!s) return;
-      const dx = e.clientX - s.startClientX;
-      const dy = e.clientY - s.startClientY;
+  const nodeDragRef = useRef<typeof nodeDrag>(null);
+  useEffect(() => { nodeDragRef.current = nodeDrag; }, [nodeDrag]);
+  const lanesRef = useRef(lanes);
+  useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+
+  const beginNodeDrag = (e: React.PointerEvent, taskId: string, sourceLaneId: string) => {
+    if (connectMode) return;
+    const s = {
+      taskId,
+      sourceLaneId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      pointerType: e.pointerType,
+      longPressReady: e.pointerType !== "touch",
+      activated: false,
+      longPressTimer: null as number | null,
+      suppressClick: false,
+    };
+    nodeDragInit.current = s;
+    if (e.pointerType === "touch") {
+      s.longPressTimer = window.setTimeout(() => { s.longPressReady = true; }, 400);
+    }
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - s.startClientX;
+      const dy = ev.clientY - s.startClientY;
       if (!s.activated) {
         if (!s.longPressReady) return;
         if (dx * dx + dy * dy < 64) return;
@@ -202,77 +220,39 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
       }
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const cx = e.clientX - rect.left - panRef.current.x;
-      const cy = e.clientY - rect.top - panRef.current.y;
-      // find hover lane (skip source lane and "__none")
+      const cx = ev.clientX - rect.left - panRef.current.x;
+      const cy = ev.clientY - rect.top - panRef.current.y;
       let hover: string | null = null;
-      for (const l of lanes) {
+      for (const l of lanesRef.current) {
         if (cy >= l.yTop && cy <= l.yTop + l.height) {
           if (l.id !== s.sourceLaneId && l.id !== "__none") hover = l.id;
           break;
         }
       }
-      setNodeDrag({
-        taskId: s.taskId,
-        sourceLaneId: s.sourceLaneId,
-        cx,
-        cy,
-        hoverLaneId: hover,
-      });
+      setNodeDrag({ taskId: s.taskId, sourceLaneId: s.sourceLaneId, cx, cy, hoverLaneId: hover });
     };
     const onUp = async () => {
-      const s = init.current;
-      if (!s) return;
       if (s.longPressTimer) { window.clearTimeout(s.longPressTimer); s.longPressTimer = null; }
-      const wasActive = s.activated;
-      const finalDrag = nodeDrag;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
-      init.current = null;
+      const wasActive = s.activated;
+      const finalDrag = nodeDragRef.current;
+      nodeDragInit.current = null;
       setNodeDrag(null);
       if (wasActive && finalDrag?.hoverLaneId) {
         const area = areas.find((a) => a.id === finalDrag.hoverLaneId);
         await updateTask(finalDrag.taskId, { area_id: finalDrag.hoverLaneId });
         if (area) toast.success(`Task zu ${area.name} verschoben`);
       }
-      // keep suppressClick true; cleared on next pointerdown
+      window.setTimeout(() => { s.suppressClick = false; }, 0);
     };
-    if (nodeDragInit.current) {
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-      return () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-      };
-    }
-  }, [nodeDrag, lanes, areas, updateTask]);
-
-  const beginNodeDrag = (e: React.PointerEvent, taskId: string, sourceLaneId: string) => {
-    if (connectMode) return;
-    nodeDragInit.current = {
-      taskId,
-      sourceLaneId,
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      pointerType: e.pointerType,
-      longPressReady: e.pointerType !== "touch",
-      activated: false,
-      longPressTimer: null,
-      suppressClick: false,
-    };
-    if (e.pointerType === "touch") {
-      nodeDragInit.current.longPressTimer = window.setTimeout(() => {
-        if (nodeDragInit.current) nodeDragInit.current.longPressReady = true;
-      }, 400);
-    }
-    // Force re-run of the effect to attach listeners
-    setNodeDrag((d) => d);
-    // Trigger state change to register listeners
-    setPan((p) => ({ ...p }));
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
   };
+
+  const wasDraggedRef = () => nodeDragInit.current?.suppressClick === true;
 
   if (derived.length === 0) {
     return (
