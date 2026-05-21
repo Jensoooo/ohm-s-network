@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useDerivedTasks } from "./TaskCard";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
@@ -120,6 +121,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openDetail = useStore((s) => s.openDetail);
+  const updateTask = useStore((s) => s.updateTask);
   const filterAreaIds = useStore((s) => s.filterAreaIds);
   const filterOwnerIds = useStore((s) => s.filterOwnerIds);
   const derived = useDerivedTasks();
@@ -144,7 +146,29 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef(pan);
+  useEffect(() => { panRef.current = pan; }, [pan]);
   const dragRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+
+  // Node drag (move task to another lane)
+  const [nodeDrag, setNodeDrag] = useState<{
+    taskId: string;
+    sourceLaneId: string;
+    cx: number; // canvas coords
+    cy: number;
+    hoverLaneId: string | null;
+  } | null>(null);
+  const nodeDragInit = useRef<{
+    taskId: string;
+    sourceLaneId: string;
+    startClientX: number;
+    startClientY: number;
+    pointerType: string;
+    longPressReady: boolean;
+    activated: boolean;
+    longPressTimer: number | null;
+    suppressClick: boolean;
+  } | null>(null);
 
   useEffect(() => { setPan({ x: 0, y: 0 }); }, [derived.length]);
 
@@ -161,6 +185,74 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
     });
   };
   const onPointerUp = () => { dragRef.current = null; };
+
+  const nodeDragRef = useRef<typeof nodeDrag>(null);
+  useEffect(() => { nodeDragRef.current = nodeDrag; }, [nodeDrag]);
+  const lanesRef = useRef(lanes);
+  useEffect(() => { lanesRef.current = lanes; }, [lanes]);
+
+  const beginNodeDrag = (e: React.PointerEvent, taskId: string, sourceLaneId: string) => {
+    if (connectMode) return;
+    const s = {
+      taskId,
+      sourceLaneId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      pointerType: e.pointerType,
+      longPressReady: e.pointerType !== "touch",
+      activated: false,
+      longPressTimer: null as number | null,
+      suppressClick: false,
+    };
+    nodeDragInit.current = s;
+    if (e.pointerType === "touch") {
+      s.longPressTimer = window.setTimeout(() => { s.longPressReady = true; }, 400);
+    }
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - s.startClientX;
+      const dy = ev.clientY - s.startClientY;
+      if (!s.activated) {
+        if (!s.longPressReady) return;
+        if (dx * dx + dy * dy < 64) return;
+        s.activated = true;
+        s.suppressClick = true;
+      }
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = ev.clientX - rect.left - panRef.current.x;
+      const cy = ev.clientY - rect.top - panRef.current.y;
+      let hover: string | null = null;
+      for (const l of lanesRef.current) {
+        if (cy >= l.yTop && cy <= l.yTop + l.height) {
+          if (l.id !== s.sourceLaneId && l.id !== "__none") hover = l.id;
+          break;
+        }
+      }
+      setNodeDrag({ taskId: s.taskId, sourceLaneId: s.sourceLaneId, cx, cy, hoverLaneId: hover });
+    };
+    const onUp = async () => {
+      if (s.longPressTimer) { window.clearTimeout(s.longPressTimer); s.longPressTimer = null; }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      const wasActive = s.activated;
+      const finalDrag = nodeDragRef.current;
+      nodeDragInit.current = null;
+      setNodeDrag(null);
+      if (wasActive && finalDrag?.hoverLaneId) {
+        const area = areas.find((a) => a.id === finalDrag.hoverLaneId);
+        await updateTask(finalDrag.taskId, { area_id: finalDrag.hoverLaneId });
+        if (area) toast.success(`Task zu ${area.name} verschoben`);
+      }
+      window.setTimeout(() => { s.suppressClick = false; }, 0);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  const wasDraggedRef = () => nodeDragInit.current?.suppressClick === true;
 
   if (derived.length === 0) {
     return (
@@ -210,14 +302,26 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
           </defs>
 
           {/* Lane backgrounds */}
-          {lanes.map((l) => (
-            <g key={l.id}>
-              <rect x={4} y={l.yTop} width={width - 8} height={l.height} rx={14} fill="#0f0228" stroke="#1f0a3d" />
-              <text x={18} y={l.yTop + 22} fill="#a78bfa" fontSize="12" fontWeight="700" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
-                {l.name}
-              </text>
-            </g>
-          ))}
+          {lanes.map((l) => {
+            const isDrop = nodeDrag?.hoverLaneId === l.id;
+            return (
+              <g key={l.id} style={{ transition: "opacity 0.15s" }}>
+                <rect
+                  x={4}
+                  y={l.yTop}
+                  width={width - 8}
+                  height={l.height}
+                  rx={14}
+                  fill={isDrop ? "rgba(124,58,237,0.08)" : "#0f0228"}
+                  stroke={isDrop ? "rgba(124,58,237,0.4)" : "#1f0a3d"}
+                  strokeWidth={isDrop ? 1.5 : 1}
+                />
+                <text x={18} y={l.yTop + 22} fill="#a78bfa" fontSize="12" fontWeight="700" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
+                  {l.name}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Edges */}
           {positioned.flatMap((p) =>
@@ -298,14 +402,21 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
           const cursor = ghost ? "default" : connectMode ? "crosshair" : "pointer";
           const dl = compactDeadline(p.task);
 
+          const isDragging = nodeDrag?.taskId === p.task.id;
           return (
             <button
               key={p.task.id}
               data-node
+              onPointerDown={
+                ghost || connectMode
+                  ? undefined
+                  : (e) => beginNodeDrag(e, p.task.id, p.laneId)
+              }
               onClick={
                 ghost
                   ? undefined
-                  : () => {
+                  : (e) => {
+                      if (wasDraggedRef()) { e.preventDefault(); return; }
                       if (connectMode && onConnectTap) onConnectTap(p.task.id);
                       else openDetail(p.task.id);
                     }
@@ -319,9 +430,10 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 height: NODE_H,
                 background: done ? "transparent" : style.bg,
                 border: `${borderWidth}px ${borderStyle} ${borderColor}`,
-                opacity,
+                opacity: isDragging ? 0.25 : opacity,
                 boxShadow,
                 cursor,
+                touchAction: "none",
               }}
             >
               {ghost && area && (
@@ -384,6 +496,36 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
             </button>
           );
         })}
+
+        {/* Drag ghost */}
+        {nodeDrag && (() => {
+          const p = posById.get(nodeDrag.taskId);
+          if (!p) return null;
+          const owner = users.find((u) => u.id === p.task.owner_id);
+          const st = ownerStyle(owner);
+          return (
+            <div
+              className="absolute pointer-events-none cut-corner"
+              style={{
+                left: nodeDrag.cx - NODE_W / 2,
+                top: nodeDrag.cy - NODE_H / 2,
+                width: NODE_W,
+                height: NODE_H,
+                background: st.bg,
+                border: `1.5px solid ${st.main}`,
+                opacity: 0.6,
+                boxShadow: `0 12px 32px ${withAlpha(st.main, 0.5)}`,
+                zIndex: 50,
+              }}
+            >
+              <div className="flex h-full items-start p-2">
+                <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
+                  {p.task.title}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
