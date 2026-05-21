@@ -1,18 +1,39 @@
 import { create } from "zustand";
 import { supabase } from "@/integrations/supabase/client";
-import type { Task, User, Area, Project, Dependency, DerivedTask, TaskStatus, Priority } from "./types";
+import type { Task, User, Area, Project, Customer, FloorConfig, Dependency, DerivedTask, TaskStatus, Priority } from "./types";
+
+export interface NewTaskTemplate {
+  title: string;
+  area_id: string;
+  owner_id: string;
+  priority: Priority;
+  deadline: string | null;
+  no_deadline: boolean;
+  depends_on_titles?: string[]; // resolved after insert
+}
+
+export interface CreateProjectInput {
+  name: string;
+  address: string | null;
+  template_type: string;
+  customer_id: string | null;
+  floors: FloorConfig[];
+  tasks: NewTaskTemplate[];
+}
 
 interface StoreState {
   tasks: Task[];
   users: User[];
   areas: Area[];
   projects: Project[];
+  customers: Customer[];
   dependencies: Dependency[];
   currentUserId: string | null;
   loaded: boolean;
   // multi-select filters (empty array = all)
   filterAreaIds: string[];
   filterOwnerIds: string[];
+  filterProjectIds: string[];
   // sheet state
   detailTaskId: string | null;
   editingTaskId: string | null | "new";
@@ -21,8 +42,10 @@ interface StoreState {
   setCurrentUser: (id: string) => void;
   toggleFilterArea: (id: string) => void;
   toggleFilterOwner: (id: string) => void;
+  toggleFilterProject: (id: string) => void;
   clearFilterAreas: () => void;
   clearFilterOwners: () => void;
+  clearFilterProjects: () => void;
   openDetail: (id: string | null) => void;
   openEdit: (id: string | null | "new") => void;
 
@@ -31,6 +54,8 @@ interface StoreState {
   updateTask: (id: string, patch: Partial<Task>, deps?: string[]) => Promise<void>;
   setStatus: (id: string, status: TaskStatus) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  createCustomer: (input: Partial<Customer> & { name: string }) => Promise<Customer>;
+  createProject: (input: CreateProjectInput) => Promise<string>;
 }
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -38,28 +63,35 @@ export const useStore = create<StoreState>((set, get) => ({
   users: [],
   areas: [],
   projects: [],
+  customers: [],
   dependencies: [],
   currentUserId: null,
   loaded: false,
   filterAreaIds: [],
   filterOwnerIds: [],
+  filterProjectIds: [],
   detailTaskId: null,
   editingTaskId: null,
 
   load: async () => {
-    const [t, u, a, p, d] = await Promise.all([
+    const [t, u, a, p, d, c] = await Promise.all([
       supabase.from("tasks").select("*").order("created_at", { ascending: false }),
       supabase.from("users").select("*").order("name"),
       supabase.from("areas").select("*").order("sort_order"),
       supabase.from("projects").select("*").order("name"),
       supabase.from("task_dependencies").select("*"),
+      supabase.from("customers").select("*").order("name"),
     ]);
     set({
       tasks: (t.data ?? []) as Task[],
       users: (u.data ?? []) as User[],
       areas: (a.data ?? []) as Area[],
-      projects: (p.data ?? []) as Project[],
+      projects: ((p.data ?? []) as unknown as Project[]).map((pr) => ({
+        ...pr,
+        floors: Array.isArray(pr.floors) ? pr.floors : [],
+      })),
       dependencies: (d.data ?? []) as Dependency[],
+      customers: (c.data ?? []) as Customer[],
       loaded: true,
       currentUserId: get().currentUserId ?? (u.data?.[0]?.id ?? null),
     });
@@ -78,8 +110,15 @@ export const useStore = create<StoreState>((set, get) => ({
         ? s.filterOwnerIds.filter((x) => x !== id)
         : [...s.filterOwnerIds, id],
     })),
+  toggleFilterProject: (id) =>
+    set((s) => ({
+      filterProjectIds: s.filterProjectIds.includes(id)
+        ? s.filterProjectIds.filter((x) => x !== id)
+        : [...s.filterProjectIds, id],
+    })),
   clearFilterAreas: () => set({ filterAreaIds: [] }),
   clearFilterOwners: () => set({ filterOwnerIds: [] }),
+  clearFilterProjects: () => set({ filterProjectIds: [] }),
   openDetail: (id) => set({ detailTaskId: id }),
   openEdit: (id) => set({ editingTaskId: id }),
 
@@ -95,6 +134,7 @@ export const useStore = create<StoreState>((set, get) => ({
         deadline: input.no_deadline ? null : input.deadline,
         no_deadline: input.no_deadline,
         status: "open",
+        project_id: input.project_id ?? null,
       })
       .select()
       .single();
@@ -144,6 +184,71 @@ export const useStore = create<StoreState>((set, get) => ({
   deleteTask: async (id) => {
     await supabase.from("tasks").delete().eq("id", id);
     await get().load();
+  },
+
+  createCustomer: async (input) => {
+    const { data, error } = await supabase
+      .from("customers")
+      .insert({
+        name: input.name,
+        address: input.address ?? null,
+        phone: input.phone ?? null,
+        email: input.email ?? null,
+        notes: input.notes ?? null,
+      })
+      .select()
+      .single();
+    if (error || !data) throw error ?? new Error("create customer failed");
+    set((s) => ({ customers: [...s.customers, data as Customer] }));
+    return data as Customer;
+  },
+
+  createProject: async (input) => {
+    const { data: project, error } = await supabase
+      .from("projects")
+      .insert({
+        name: input.name,
+        address: input.address,
+        template_type: input.template_type,
+        customer_id: input.customer_id,
+        floors: input.floors as unknown as any,
+      })
+      .select()
+      .single();
+    if (error || !project) throw error ?? new Error("create project failed");
+
+    const projectId = project.id;
+    // Insert tasks; preserve order to resolve dep titles
+    const titleToId = new Map<string, string>();
+    for (const t of input.tasks) {
+      const { data: row } = await supabase
+        .from("tasks")
+        .insert({
+          title: t.title,
+          area_id: t.area_id,
+          owner_id: t.owner_id,
+          priority: t.priority,
+          deadline: t.no_deadline ? null : t.deadline,
+          no_deadline: t.no_deadline,
+          status: "open",
+          project_id: projectId,
+        })
+        .select()
+        .single();
+      if (row) titleToId.set(t.title, row.id);
+    }
+    const depRows: { task_id: string; depends_on_id: string }[] = [];
+    for (const t of input.tasks) {
+      const id = titleToId.get(t.title);
+      if (!id || !t.depends_on_titles) continue;
+      for (const dt of t.depends_on_titles) {
+        const depId = titleToId.get(dt);
+        if (depId) depRows.push({ task_id: id, depends_on_id: depId });
+      }
+    }
+    if (depRows.length) await supabase.from("task_dependencies").insert(depRows);
+    await get().load();
+    return projectId;
   },
 }));
 
