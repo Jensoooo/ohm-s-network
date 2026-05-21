@@ -402,14 +402,21 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
           const cursor = ghost ? "default" : connectMode ? "crosshair" : "pointer";
           const dl = compactDeadline(p.task);
 
+          const isDragging = nodeDrag?.taskId === p.task.id;
           return (
             <button
               key={p.task.id}
               data-node
+              onPointerDown={
+                ghost || connectMode
+                  ? undefined
+                  : (e) => beginNodeDrag(e, p.task.id, p.laneId)
+              }
               onClick={
                 ghost
                   ? undefined
-                  : () => {
+                  : (e) => {
+                      if (wasDraggedRef()) { e.preventDefault(); return; }
                       if (connectMode && onConnectTap) onConnectTap(p.task.id);
                       else openDetail(p.task.id);
                     }
@@ -423,9 +430,10 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 height: NODE_H,
                 background: done ? "transparent" : style.bg,
                 border: `${borderWidth}px ${borderStyle} ${borderColor}`,
-                opacity,
+                opacity: isDragging ? 0.25 : opacity,
                 boxShadow,
                 cursor,
+                touchAction: "none",
               }}
             >
               {ghost && area && (
