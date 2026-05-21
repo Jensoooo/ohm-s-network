@@ -48,15 +48,18 @@ export function TaskFormSheet() {
       setPriority(existing.priority);
       setOwnerId(existing.owner_id ?? "");
       setAreaId(existing.area_id ?? "");
+      setProjectId(existing.project_id ?? "");
       setNoDeadline(existing.no_deadline);
       setDeadline(existing.deadline ? existing.deadline.slice(0, 10) : "");
       setSelectedDeps(deps.filter((d) => d.task_id === existing.id).map((d) => d.depends_on_id));
     } else {
       setTitle(""); setDescription(""); setPriority("mittel");
       setOwnerId(users[0]?.id ?? ""); setAreaId(areas[0]?.id ?? "");
+      setProjectId("");
       setNoDeadline(false); setDeadline(""); setSelectedDeps([]);
     }
   }, [open, existing, users, areas, deps]);
+
 
   const candidateDeps = useMemo(
     () => tasks.filter((t) => !existing || t.id !== existing.id),
