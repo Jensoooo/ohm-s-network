@@ -438,6 +438,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 boxShadow,
                 cursor,
                 touchAction: "none",
+                zIndex: 1,
               }}
             >
               {ghost && area && (
