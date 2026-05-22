@@ -283,7 +283,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
       onPointerCancel={onPointerUp}
     >
       <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, width, height }} className="relative isolate">
-        <svg width={width} height={height} className="absolute inset-0 pointer-events-none -z-10">
+        <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
           <defs>
             <linearGradient id="cross-grad" x1="0" y1="1" x2="0" y2="0">
               <stop offset="0%" stopColor="#14b8a6" />
@@ -426,7 +426,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                     }
               }
               disabled={ghost}
-              className="absolute z-10 cut-corner text-left transition-transform active:scale-[0.97]"
+              className="absolute cut-corner text-left transition-transform active:scale-[0.97]"
               style={{
                 left: p.x,
                 top: p.y,
