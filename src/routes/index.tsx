@@ -55,35 +55,25 @@ function TasksPage() {
   const openEdit = useStore((s) => s.openEdit);
 
   const [sortBy, setSortBy] = useState<SortBy>("auto");
-  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const derived = useDerivedTasks();
 
-  const assigned = useMemo(() => {
+  const tasks = useMemo(() => {
     const filtered = derived
       .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
-      .filter((t) => {
-        if (showUnassigned) return t.owner_id === null;
-        if (filterOwnerIds.length === 0) return t.owner_id !== null;
-        return t.owner_id && filterOwnerIds.includes(t.owner_id);
-      })
+      .filter((t) =>
+        filterOwnerIds.length === 0 ||
+        filterOwnerIds.some((id) =>
+          id === "__unassigned__" ? t.owner_id === null : t.owner_id === id
+        )
+      )
       .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)));
 
     const open = filtered.filter((t) => t.effectiveStatus !== "done");
-    return sortTasks(open.filter((t) => t.owner_id !== null), sortBy, users);
-  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, sortBy, showUnassigned, users]);
+    return sortTasks(open, sortBy, users);
+  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, sortBy, users]);
 
-  const backlog = useMemo(
-    () =>
-      derived
-        .filter((t) => t.owner_id === null)
-        .filter((t) => t.effectiveStatus !== "done")
-        .filter((t) => !t.isBlocked)
-        .sort(sortAsap),
-    [derived],
-  );
-
-  const openCount = assigned.length + backlog.length;
+  const openCount = tasks.length;
 
   return (
     <div className="mx-auto max-w-md px-4 pt-6">
@@ -104,8 +94,12 @@ function TasksPage() {
         ))}
       </div>
       <div className="mb-2 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
-        <Chip label="Alle" active={filterOwnerIds.length === 0 && !showUnassigned} onClick={() => { clearFilterOwners(); setShowUnassigned(false); }} />
-        <Chip label="Nicht zugeordnet" active={showUnassigned} onClick={() => setShowUnassigned((v) => !v)} />
+        <Chip label="Alle" active={filterOwnerIds.length === 0} onClick={clearFilterOwners} />
+        <Chip
+          label="Nicht zugeordnet"
+          active={filterOwnerIds.includes("__unassigned__")}
+          onClick={() => toggleFilterOwner("__unassigned__")}
+        />
         {users.map((u) => {
           const st = ownerStyle(u);
           return (
@@ -113,7 +107,7 @@ function TasksPage() {
               key={u.id}
               label={u.name}
               active={filterOwnerIds.includes(u.id)}
-              onClick={() => { setShowUnassigned(false); toggleFilterOwner(u.id); }}
+              onClick={() => toggleFilterOwner(u.id)}
               dotColor={st.main}
             />
           );
@@ -148,7 +142,7 @@ function TasksPage() {
         ))}
       </div>
 
-      {assigned.length === 0 && backlog.length === 0 ? (
+      {tasks.length === 0 ? (
         <div className="mt-16 text-center text-muted-foreground">
           <p>Keine Aufgaben.</p>
           <Button onClick={() => openEdit("new")} className="mt-4 gradient-brand rounded-full text-white">
@@ -156,31 +150,11 @@ function TasksPage() {
           </Button>
         </div>
       ) : (
-        <>
-          <ul className="space-y-3">
-            {assigned.map((t) => (
-              <li key={t.id}><TaskCard task={t} /></li>
-            ))}
-          </ul>
-
-          {backlog.length > 0 && (
-            <div className="mt-6">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Backlog — nicht zugeordnet
-                </span>
-                <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] text-muted-foreground">
-                  {backlog.length}
-                </span>
-              </div>
-              <ul className="space-y-2 opacity-70">
-                {backlog.map((t) => (
-                  <li key={t.id}><TaskCard task={t} /></li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
+        <ul className="space-y-3">
+          {tasks.map((t) => (
+            <li key={t.id}><TaskCard task={t} /></li>
+          ))}
+        </ul>
       )}
     </div>
   );

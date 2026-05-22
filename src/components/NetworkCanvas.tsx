@@ -283,7 +283,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
       onPointerCancel={onPointerUp}
     >
       <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, width, height }} className="relative">
-        <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
+        <svg width={width} height={height} className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
           <defs>
             <linearGradient id="cross-grad" x1="0" y1="1" x2="0" y2="0">
               <stop offset="0%" stopColor="#14b8a6" />
@@ -335,26 +335,9 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               const y1 = from.y + NODE_H / 2;
               const x2 = p.x;
               const y2 = p.y + NODE_H / 2;
-              const colSpan = p.col - from.col;
-              let pathD: string;
-              if (colSpan <= 1) {
-                const cx1 = x1 + Math.min(80, (x2 - x1) / 2);
-                const cx2 = x2 - Math.min(80, (x2 - x1) / 2);
-                pathD = `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`;
-              } else {
-                const intermediate = positioned.filter((pos) => pos.col > from.col && pos.col < p.col);
-                const topIntermediate = intermediate.length > 0
-                  ? Math.min(...intermediate.map((n) => n.y))
-                  : Math.min(y1, y2);
-                const corridorY = topIntermediate - 50;
-                pathD = [
-                  `M ${x1} ${y1}`,
-                  `C ${x1 + 40} ${y1} ${x1} ${corridorY + 40} ${x1} ${corridorY}`,
-                  `L ${x2} ${corridorY}`,
-                  `C ${x2} ${corridorY} ${x2 - 40} ${corridorY} ${x2} ${y2 - 40}`,
-                  `L ${x2} ${y2}`,
-                ].join(" ");
-              }
+              const cx1 = x1 + Math.min(80, (x2 - x1) / 2);
+              const cx2 = x2 - Math.min(80, (x2 - x1) / 2);
+              const pathD = `M ${x1} ${y1} C ${cx1} ${y1} ${cx2} ${y2} ${x2} ${y2}`;
               const crossLane = from.laneId !== p.laneId;
               const depDone = dep.status === "done";
 
@@ -455,6 +438,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 boxShadow,
                 cursor,
                 touchAction: "none",
+                zIndex: 1,
               }}
             >
               {ghost && area && (
