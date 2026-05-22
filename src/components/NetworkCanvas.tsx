@@ -282,7 +282,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, width, height }} className="relative isolate">
+      <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, width, height }} className="relative">
         <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
           <defs>
             <linearGradient id="cross-grad" x1="0" y1="1" x2="0" y2="0">
