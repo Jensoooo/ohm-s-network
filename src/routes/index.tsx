@@ -59,21 +59,29 @@ function TasksPage() {
 
   const derived = useDerivedTasks();
 
-  const [assigned, backlog] = useMemo(() => {
+  const assigned = useMemo(() => {
     const filtered = derived
       .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
       .filter((t) => {
         if (showUnassigned) return t.owner_id === null;
-        if (filterOwnerIds.length === 0) return true;
+        if (filterOwnerIds.length === 0) return t.owner_id !== null;
         return t.owner_id && filterOwnerIds.includes(t.owner_id);
       })
       .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)));
 
     const open = filtered.filter((t) => t.effectiveStatus !== "done");
-    const assigned = sortTasks(open.filter((t) => t.owner_id !== null), sortBy, users);
-    const backlog = open.filter((t) => t.owner_id === null && !t.isBlocked).sort(sortAsap);
-    return [assigned, backlog];
+    return sortTasks(open.filter((t) => t.owner_id !== null), sortBy, users);
   }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, sortBy, showUnassigned, users]);
+
+  const backlog = useMemo(
+    () =>
+      derived
+        .filter((t) => t.owner_id === null)
+        .filter((t) => t.effectiveStatus !== "done")
+        .filter((t) => !t.isBlocked)
+        .sort(sortAsap),
+    [derived],
+  );
 
   const openCount = assigned.length + backlog.length;
 
