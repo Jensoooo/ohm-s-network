@@ -124,27 +124,31 @@ export function BaustelleWizard({ open, onClose }: Props) {
       }
 
       const defaultArea = areas[0]?.id ?? "";
-      const defaultOwner = users[0]?.id ?? "";
-      if (!defaultArea || !defaultOwner) {
-        toast.error("Bitte zuerst Bereiche und Bearbeiter anlegen");
+      if (!defaultArea) {
+        toast.error("Bitte zuerst Bereiche anlegen");
         setSaving(false);
         return;
       }
 
+      const meisterUser = users.find((u) => u.role === "Meister");
+
       const selected = tasks.filter((t) => t.selected);
       const selectedKeys = new Set(selected.map((t) => t.key));
 
-      const newTasks = selected.map((t) => ({
-        title: t.title,
-        area_id: defaultArea,
-        owner_id: defaultOwner,
-        priority: "mittel" as Priority,
-        deadline: null,
-        no_deadline: true,
-        depends_on_titles: t.depends_on_keys
-          .filter((k) => selectedKeys.has(k))
-          .map((k) => tasks.find((x) => x.key === k)!.title),
-      }));
+      const newTasks = selected.map((t) => {
+        const autoOwner = t.autoAssignRole === "Meister" ? (meisterUser?.id ?? null) : null;
+        return {
+          title: t.title,
+          area_id: defaultArea,
+          owner_id: autoOwner,
+          priority: "mittel" as Priority,
+          deadline: null,
+          no_deadline: true,
+          depends_on_titles: t.depends_on_keys
+            .filter((k) => selectedKeys.has(k))
+            .map((k) => tasks.find((x) => x.key === k)!.title),
+        };
+      });
 
       await createProject({
         name: name.trim(),

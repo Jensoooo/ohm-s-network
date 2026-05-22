@@ -25,7 +25,6 @@ export interface Project {
   id: string;
   name: string;
   customer_id: string | null;
-  customer: string | null;
   address: string | null;
   status: string | null;
   template_type: string | null;

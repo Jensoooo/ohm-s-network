@@ -5,11 +5,11 @@ import type { Task, User, Area, Project, Customer, FloorConfig, Dependency, Deri
 export interface NewTaskTemplate {
   title: string;
   area_id: string;
-  owner_id: string;
+  owner_id: string | null;
   priority: Priority;
   deadline: string | null;
   no_deadline: boolean;
-  depends_on_titles?: string[]; // resolved after insert
+  depends_on_titles?: string[];
 }
 
 export interface CreateProjectInput {
@@ -217,38 +217,38 @@ export const useStore = create<StoreState>((set, get) => ({
       .single();
     if (error || !project) throw error ?? new Error("create project failed");
 
-    const projectId = project.id;
-    // Insert tasks; preserve order to resolve dep titles
-    const titleToId = new Map<string, string>();
-    for (const t of input.tasks) {
-      const { data: row } = await supabase
-        .from("tasks")
-        .insert({
-          title: t.title,
-          area_id: t.area_id,
-          owner_id: t.owner_id,
-          priority: t.priority,
-          deadline: t.no_deadline ? null : t.deadline,
-          no_deadline: t.no_deadline,
-          status: "open",
-          project_id: projectId,
-        })
-        .select()
-        .single();
-      if (row) titleToId.set(t.title, row.id);
+    const taskRows = input.tasks.map((t) => ({
+      title: t.title,
+      area_id: t.area_id,
+      owner_id: t.owner_id ?? null,
+      priority: t.priority,
+      deadline: t.no_deadline ? null : t.deadline,
+      no_deadline: t.no_deadline,
+      status: "open" as const,
+      project_id: project.id,
+    }));
+
+    const { data: inserted, error: taskError } = await supabase
+      .from("tasks")
+      .insert(taskRows)
+      .select();
+    if (taskError || !inserted) throw taskError ?? new Error("task insert failed");
+
+    const titleToId = new Map(inserted.map((r) => [r.title, r.id]));
+
+    const depRows = input.tasks.flatMap((t) =>
+      (t.depends_on_titles ?? []).flatMap((dt) => {
+        const tid = titleToId.get(t.title);
+        const did = titleToId.get(dt);
+        return tid && did ? [{ task_id: tid, depends_on_id: did }] : [];
+      })
+    );
+    if (depRows.length) {
+      await supabase.from("task_dependencies").insert(depRows);
     }
-    const depRows: { task_id: string; depends_on_id: string }[] = [];
-    for (const t of input.tasks) {
-      const id = titleToId.get(t.title);
-      if (!id || !t.depends_on_titles) continue;
-      for (const dt of t.depends_on_titles) {
-        const depId = titleToId.get(dt);
-        if (depId) depRows.push({ task_id: id, depends_on_id: depId });
-      }
-    }
-    if (depRows.length) await supabase.from("task_dependencies").insert(depRows);
+
     await get().load();
-    return projectId;
+    return project.id;
   },
 }));
 

@@ -13,34 +13,24 @@ export const PROJECT_TEMPLATES = [
 export type ProjectTemplate = (typeof PROJECT_TEMPLATES)[number];
 
 export const ROOM_TYPES = [
-  "Wohnzimmer",
-  "Schlafzimmer",
-  "Küche",
-  "Bad",
-  "WC",
-  "Flur",
-  "Treppenhaus",
-  "Keller",
-  "Dachboden",
-  "Garage",
-  "Außenbereich",
+  "Wohnzimmer", "Schlafzimmer", "Küche", "Bad", "WC",
+  "Flur", "Treppenhaus", "Keller", "Dachboden", "Garage", "Außenbereich",
 ] as const;
 
 export const FLOOR_TEMPLATES = ["Neubau Wohngebäude", "Renovierung / Umbau"];
 
-const GENERAL_TASKS = [
-  "Aufmaß vor Ort",
-  "Angebot erstellen",
-  "Angebot freigeben lassen",
-  "Material kalkulieren",
-  "Material bestellen",
-  "Zählerschrank / UV planen",
-  "Abnahme durchführen",
-  "Prüfprotokoll erstellen",
-  "Rechnung stellen",
+const GENERAL_TASK_DEFS: { title: string; depends_on: string[]; autoAssignRole?: string }[] = [
+  { title: "Aufmaß vor Ort",         depends_on: [] },
+  { title: "Angebot erstellen",       depends_on: ["Aufmaß vor Ort"] },
+  { title: "Angebot freigeben lassen",depends_on: ["Angebot erstellen"] },
+  { title: "Zählerschrank / UV planen", depends_on: ["Aufmaß vor Ort"] },
+  { title: "Material kalkulieren",    depends_on: ["Angebot freigeben lassen"] },
+  { title: "Material bestellen",      depends_on: ["Material kalkulieren"] },
+  { title: "Abnahme durchführen",     depends_on: [], autoAssignRole: "Meister" },
+  { title: "Prüfprotokoll erstellen", depends_on: ["Abnahme durchführen"], autoAssignRole: "Meister" },
+  { title: "Rechnung stellen",        depends_on: ["Prüfprotokoll erstellen"] },
 ];
 
-// Sequenz pro Raum — Reihenfolge bestimmt automatische Abhängigkeiten
 const ROOM_SEQUENCE = [
   "Planung",
   "Schlitzen",
@@ -53,11 +43,12 @@ const ROOM_SEQUENCE = [
 ];
 
 export interface GeneratedTask {
-  key: string;            // stable id within wizard
+  key: string;
   title: string;
   selected: boolean;
-  group: "Allgemein" | string; // group label (e.g. "Küche 1" oder "Allgemein")
+  group: "Allgemein" | string;
   depends_on_keys: string[];
+  autoAssignRole?: string;
 }
 
 export function generateTasksForProject(
@@ -66,45 +57,66 @@ export function generateTasksForProject(
 ): GeneratedTask[] {
   const out: GeneratedTask[] = [];
 
-  for (const title of GENERAL_TASKS) {
+  for (const def of GENERAL_TASK_DEFS) {
     out.push({
-      key: `gen-${title}`,
-      title,
+      key: `gen-${def.title}`,
+      title: def.title,
       selected: true,
       group: "Allgemein",
-      depends_on_keys: [],
+      depends_on_keys: def.depends_on.map((d) => `gen-${d}`),
+      autoAssignRole: def.autoAssignRole,
     });
   }
 
   if (!FLOOR_TEMPLATES.includes(template)) return out;
 
-  // Count per room type across all floors for numbering "Küche 1", "Küche 2"
   const counter: Record<string, number> = {};
+  const allPruefenKeys: string[] = [];
+
   for (const floor of floors) {
     for (const room of floor.rooms) {
       if (room.count < 1) continue;
       for (let i = 0; i < room.count; i++) {
         counter[room.type] = (counter[room.type] ?? 0) + 1;
         const totalForType = totalCountForType(floors, room.type);
-        const roomName =
-          totalForType > 1 ? `${room.type} ${counter[room.type]}` : room.type;
+        const roomName = totalForType > 1
+          ? `${room.type} ${counter[room.type]}`
+          : room.type;
 
-        const roomKeys: string[] = [];
         let prevKey: string | null = null;
         for (const step of ROOM_SEQUENCE) {
           const key = `room-${roomName}-${step}`;
+          const extraDeps: string[] = [];
+
+          if (step === "Planung") {
+            extraDeps.push("gen-Zählerschrank / UV planen");
+            extraDeps.push("gen-Angebot freigeben lassen");
+          }
+          if (step === "Kabel ziehen") {
+            extraDeps.push("gen-Material bestellen");
+          }
+
           out.push({
             key,
             title: `${step} (${roomName})`,
             selected: true,
             group: roomName,
-            depends_on_keys: prevKey ? [prevKey] : [],
+            depends_on_keys: [
+              ...(prevKey ? [prevKey] : []),
+              ...extraDeps,
+            ],
           });
-          roomKeys.push(key);
+
+          if (step === "Prüfen") allPruefenKeys.push(key);
           prevKey = key;
         }
       }
     }
+  }
+
+  const abnahme = out.find((t) => t.key === "gen-Abnahme durchführen");
+  if (abnahme) {
+    abnahme.depends_on_keys = [...abnahme.depends_on_keys, ...allPruefenKeys];
   }
 
   return out;
