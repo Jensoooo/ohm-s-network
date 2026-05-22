@@ -360,7 +360,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
                 stroke = "#a78bfa";
                 strokeWidth = 2.5;
                 dash = undefined;
-                marker = "url(#arrow-dim)";
+                markerEnd: undefined;
               }
 
               return (
