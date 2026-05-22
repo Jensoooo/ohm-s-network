@@ -5,11 +5,11 @@ import type { Task, User, Area, Project, Customer, FloorConfig, Dependency, Deri
 export interface NewTaskTemplate {
   title: string;
   area_id: string;
-  owner_id: string;
+  owner_id: string | null;
   priority: Priority;
   deadline: string | null;
   no_deadline: boolean;
-  depends_on_titles?: string[]; // resolved after insert
+  depends_on_titles?: string[];
 }
 
 export interface CreateProjectInput {
