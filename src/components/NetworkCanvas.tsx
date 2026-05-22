@@ -383,7 +383,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
               return (
                 <path
                   key={`${dep.id}-${p.task.id}`}
-                  d={`M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`}
+                  d={pathD}
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   fill="none"
