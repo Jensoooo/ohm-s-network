@@ -133,7 +133,7 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
         .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
         .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
         .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
-        .map((t) => t.id),F
+        .map((t) => t.id),
     );
   }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds]);
 
