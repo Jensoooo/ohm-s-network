@@ -1,15 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useStore, sortAsap } from "@/lib/store";
 import { TaskCard, useDerivedTasks } from "@/components/TaskCard";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { ownerStyle } from "@/lib/colors";
+import type { DerivedTask, User, Priority } from "@/lib/types";
 
 export const Route = createFileRoute("/")({
   component: TasksPage,
 });
+
+type SortBy = "auto" | "prio" | "frist" | "bearbeiter";
+
+function sortTasks(tasks: DerivedTask[], by: SortBy, users: User[]): DerivedTask[] {
+  const base = [...tasks];
+  if (by === "auto") return base.sort(sortAsap);
+  if (by === "prio") {
+    const po: Record<Priority, number> = { hoch: 0, mittel: 1, niedrig: 2 };
+    return base.sort((a, b) => po[a.priority] - po[b.priority]);
+  }
+  if (by === "frist") {
+    return base.sort((a, b) => {
+      if (a.no_deadline && b.no_deadline) return 0;
+      if (a.no_deadline) return 1;
+      if (b.no_deadline) return -1;
+      return (a.deadline ?? "").localeCompare(b.deadline ?? "");
+    });
+  }
+  if (by === "bearbeiter") {
+    return base.sort((a, b) => {
+      const na = users.find((u) => u.id === a.owner_id)?.name ?? "ZZZ";
+      const nb = users.find((u) => u.id === b.owner_id)?.name ?? "ZZZ";
+      return na.localeCompare(nb);
+    });
+  }
+  return base;
+}
 
 function TasksPage() {
   const filterAreaIds = useStore((s) => s.filterAreaIds);
@@ -26,17 +54,28 @@ function TasksPage() {
   const projects = useStore((s) => s.projects);
   const openEdit = useStore((s) => s.openEdit);
 
+  const [sortBy, setSortBy] = useState<SortBy>("auto");
+  const [showUnassigned, setShowUnassigned] = useState(false);
+
   const derived = useDerivedTasks();
 
-  const visible = useMemo(() => {
-    return derived
+  const [assigned, backlog] = useMemo(() => {
+    const filtered = derived
       .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
-      .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
-      .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
-      .sort(sortAsap);
-  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds]);
+      .filter((t) => {
+        if (showUnassigned) return t.owner_id === null;
+        if (filterOwnerIds.length === 0) return true;
+        return t.owner_id && filterOwnerIds.includes(t.owner_id);
+      })
+      .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)));
 
-  const openCount = visible.filter((t) => t.effectiveStatus !== "done").length;
+    const open = filtered.filter((t) => t.effectiveStatus !== "done");
+    const assigned = sortTasks(open.filter((t) => t.owner_id !== null), sortBy, users);
+    const backlog = open.filter((t) => t.owner_id === null && !t.isBlocked).sort(sortAsap);
+    return [assigned, backlog];
+  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, sortBy, showUnassigned, users]);
+
+  const openCount = assigned.length + backlog.length;
 
   return (
     <div className="mx-auto max-w-md px-4 pt-6">
@@ -57,7 +96,8 @@ function TasksPage() {
         ))}
       </div>
       <div className="mb-2 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
-        <Chip label="Alle" active={filterOwnerIds.length === 0} onClick={clearFilterOwners} />
+        <Chip label="Alle" active={filterOwnerIds.length === 0 && !showUnassigned} onClick={() => { clearFilterOwners(); setShowUnassigned(false); }} />
+        <Chip label="Nicht zugeordnet" active={showUnassigned} onClick={() => setShowUnassigned((v) => !v)} />
         {users.map((u) => {
           const st = ownerStyle(u);
           return (
@@ -65,21 +105,42 @@ function TasksPage() {
               key={u.id}
               label={u.name}
               active={filterOwnerIds.includes(u.id)}
-              onClick={() => toggleFilterOwner(u.id)}
+              onClick={() => { setShowUnassigned(false); toggleFilterOwner(u.id); }}
               dotColor={st.main}
             />
           );
         })}
       </div>
-      <div className="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+      <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
         <Chip label="Alle Baustellen" active={filterProjectIds.length === 0} onClick={clearFilterProjects} />
         {projects.map((p) => (
           <Chip key={p.id} label={p.name} active={filterProjectIds.includes(p.id)} onClick={() => toggleFilterProject(p.id)} />
         ))}
       </div>
 
+      <div className="mb-3 -mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar">
+        {([
+          ["auto", "Standard"],
+          ["prio", "Priorität"],
+          ["frist", "Frist"],
+          ["bearbeiter", "Bearbeiter"],
+        ] as const).map(([val, label]) => (
+          <button
+            key={val}
+            onClick={() => setSortBy(val)}
+            className={
+              "shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium transition " +
+              (sortBy === val
+                ? "border-transparent gradient-brand text-white"
+                : "border-border bg-card-raw text-muted-foreground")
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {visible.length === 0 ? (
+      {assigned.length === 0 && backlog.length === 0 ? (
         <div className="mt-16 text-center text-muted-foreground">
           <p>Keine Aufgaben.</p>
           <Button onClick={() => openEdit("new")} className="mt-4 gradient-brand rounded-full text-white">
@@ -87,11 +148,31 @@ function TasksPage() {
           </Button>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {visible.map((t) => (
-            <li key={t.id}><TaskCard task={t} /></li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-3">
+            {assigned.map((t) => (
+              <li key={t.id}><TaskCard task={t} /></li>
+            ))}
+          </ul>
+
+          {backlog.length > 0 && (
+            <div className="mt-6">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Backlog — nicht zugeordnet
+                </span>
+                <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {backlog.length}
+                </span>
+              </div>
+              <ul className="space-y-2 opacity-70">
+                {backlog.map((t) => (
+                  <li key={t.id}><TaskCard task={t} /></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
