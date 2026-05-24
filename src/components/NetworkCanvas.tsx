@@ -124,23 +124,43 @@ function computeLayout(
   const lanes: LaneLayout[] = [];
   const positioned: Positioned[] = [];
   let yCursor = 12;
+  const placedY = new Map<string, number>();
 
   const buildLane = (laneId: string, name: string, inLane: DerivedTask[]) => {
     if (inLane.length === 0) return;
 
-    const laneRows = Array.from(new Set(inLane.map((t) => rowByTask.get(t.id) ?? 0))).sort((a, b) => a - b);
-    const laneRowIndex = new Map(laneRows.map((r, i) => [r, i]));
-    const numRows = laneRows.length;
-
-    const laneHeight = LANE_HEADER_H + LANE_PAD_TOP + numRows * NODE_H + (numRows - 1) * ROW_GAP + LANE_PAD_BOT;
-    lanes.push({ id: laneId, name, yTop: yCursor, height: laneHeight });
-
+    // Group lane tasks by column
+    const byCols = new Map<number, DerivedTask[]>();
     for (const t of inLane) {
       const col = colByTask.get(t.id) ?? 0;
-      const rowIdx = laneRowIndex.get(rowByTask.get(t.id) ?? 0) ?? 0;
-      const x = 20 + col * (NODE_W + COL_GAP);
-      const y = yCursor + LANE_HEADER_H + LANE_PAD_TOP + rowIdx * (NODE_H + ROW_GAP);
-      positioned.push({ task: t, x, y, col, laneId, ghost: ghostIds.has(t.id) });
+      if (!byCols.has(col)) byCols.set(col, []);
+      byCols.get(col)!.push(t);
+    }
+
+    const maxColCount = Math.max(...Array.from(byCols.values()).map((c) => c.length));
+    const laneHeight = LANE_HEADER_H + LANE_PAD_TOP + maxColCount * NODE_H + (maxColCount - 1) * ROW_GAP + LANE_PAD_BOT;
+    lanes.push({ id: laneId, name, yTop: yCursor, height: laneHeight });
+
+    const sortedCols = Array.from(byCols.keys()).sort((a, b) => a - b);
+    for (const col of sortedCols) {
+      const colTasks = byCols.get(col)!;
+      if (col === sortedCols[0]) {
+        colTasks.sort((a, b) => a.title.localeCompare(b.title));
+      } else {
+        const barycenter = (t: DerivedTask): number => {
+          const preds = t.dependsOn.filter((dep) => placedY.has(dep.id));
+          if (preds.length === 0) return 999999;
+          return preds.reduce((sum, dep) => sum + (placedY.get(dep.id) ?? 0), 0) / preds.length;
+        };
+        colTasks.sort((a, b) => barycenter(a) - barycenter(b));
+      }
+
+      colTasks.forEach((t, i) => {
+        const x = 20 + col * (NODE_W + COL_GAP);
+        const y = yCursor + LANE_HEADER_H + LANE_PAD_TOP + i * (NODE_H + ROW_GAP);
+        positioned.push({ task: t, x, y, col, laneId, ghost: ghostIds.has(t.id) });
+        placedY.set(t.id, y + NODE_H / 2);
+      });
     }
 
     yCursor += laneHeight + 8;
@@ -150,6 +170,7 @@ function computeLayout(
     buildLane(area.id, area.name, placedTasks.filter((t) => t.area_id === area.id));
   }
   buildLane("__none", "Ohne Bereich", placedTasks.filter((t) => !t.area_id));
+
 
   const maxCol = Math.max(0, ...positioned.map((p) => p.col));
   const width = 40 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
