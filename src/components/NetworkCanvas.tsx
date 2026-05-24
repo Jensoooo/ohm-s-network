@@ -30,7 +30,7 @@ function computeLayout(
   visibleTaskIds: Set<string>,
   showGhosts: boolean,
 ) {
-  // Topological columns based on ALL deps (for stable rank)
+  // --- Topologische Spalten (X-Position) ---
   const colByTask = new Map<string, number>();
   const remaining = new Set(tasks.map((t) => t.id));
   let safe = 0;
@@ -49,7 +49,7 @@ function computeLayout(
     if (!progressed) { for (const id of remaining) colByTask.set(id, 0); break; }
   }
 
-  // Determine which tasks are placed
+  // --- Ghost-Node Bestimmung ---
   const ghostIds = new Set<string>();
   if (showGhosts) {
     for (const t of tasks) {
@@ -62,7 +62,64 @@ function computeLayout(
   const placedIds = new Set([...visibleTaskIds, ...ghostIds]);
   const placedTasks = tasks.filter((t) => placedIds.has(t.id));
 
-  // Lanes
+  // --- Zeilen-Zuweisung (ROW ASSIGNMENT) ---
+  const rowByTask = new Map<string, number>();
+
+  const successors = new Map<string, string[]>();
+  for (const t of placedTasks) {
+    for (const dep of t.dependsOn) {
+      if (!successors.has(dep.id)) successors.set(dep.id, []);
+      successors.get(dep.id)!.push(t.id);
+    }
+  }
+
+  const inDegree = new Map<string, number>();
+  for (const t of placedTasks) {
+    inDegree.set(t.id, t.dependsOn.filter((d) => placedIds.has(d.id)).length);
+  }
+
+  let nextRow = 0;
+
+  function assignRow(taskId: string, row: number) {
+    if (rowByTask.has(taskId)) return;
+    rowByTask.set(taskId, row);
+
+    const childs = (successors.get(taskId) ?? [])
+      .filter((id) => placedIds.has(id))
+      .sort((a, b) => (colByTask.get(a) ?? 0) - (colByTask.get(b) ?? 0));
+
+    if (childs.length === 0) return;
+
+    if (childs.length === 1) {
+      assignRow(childs[0], row);
+    } else {
+      assignRow(childs[0], row);
+      for (let i = 1; i < childs.length; i++) {
+        nextRow = Math.max(nextRow, ...Array.from(rowByTask.values())) + 2;
+        assignRow(childs[i], nextRow);
+      }
+    }
+  }
+
+  const sources = placedTasks
+    .filter((t) => (inDegree.get(t.id) ?? 0) === 0)
+    .sort((a, b) => {
+      if (a.area_id !== b.area_id) return (a.area_id ?? "").localeCompare(b.area_id ?? "");
+      return a.title.localeCompare(b.title);
+    });
+
+  for (const src of sources) {
+    nextRow = rowByTask.size === 0 ? 0 : Math.max(...Array.from(rowByTask.values())) + 2;
+    assignRow(src.id, nextRow);
+  }
+
+  for (const t of placedTasks) {
+    if (!rowByTask.has(t.id)) {
+      rowByTask.set(t.id, Math.max(0, ...Array.from(rowByTask.values())) + 2);
+    }
+  }
+
+  // --- Swimlane Layout ---
   const orderedAreas = [...areas].sort((a, b) => a.sort_order - b.sort_order);
   const lanes: LaneLayout[] = [];
   const positioned: Positioned[] = [];
@@ -70,22 +127,22 @@ function computeLayout(
 
   const buildLane = (laneId: string, name: string, inLane: DerivedTask[]) => {
     if (inLane.length === 0) return;
-    const byCol = new Map<number, DerivedTask[]>();
-    for (const t of inLane) {
-      const c = colByTask.get(t.id) ?? 0;
-      if (!byCol.has(c)) byCol.set(c, []);
-      byCol.get(c)!.push(t);
-    }
-    const maxRows = Math.max(...[...byCol.values()].map((v) => v.length));
-    const laneHeight = LANE_HEADER_H + LANE_PAD_TOP + maxRows * NODE_H + (maxRows - 1) * ROW_GAP + LANE_PAD_BOT;
+
+    const laneRows = Array.from(new Set(inLane.map((t) => rowByTask.get(t.id) ?? 0))).sort((a, b) => a - b);
+    const laneRowIndex = new Map(laneRows.map((r, i) => [r, i]));
+    const numRows = laneRows.length;
+
+    const laneHeight = LANE_HEADER_H + LANE_PAD_TOP + numRows * NODE_H + (numRows - 1) * ROW_GAP + LANE_PAD_BOT;
     lanes.push({ id: laneId, name, yTop: yCursor, height: laneHeight });
-    for (const [col, rows] of byCol.entries()) {
-      rows.forEach((t, i) => {
-        const x = 20 + col * (NODE_W + COL_GAP);
-        const y = yCursor + LANE_HEADER_H + LANE_PAD_TOP + i * (NODE_H + ROW_GAP);
-        positioned.push({ task: t, x, y, col, laneId, ghost: ghostIds.has(t.id) });
-      });
+
+    for (const t of inLane) {
+      const col = colByTask.get(t.id) ?? 0;
+      const rowIdx = laneRowIndex.get(rowByTask.get(t.id) ?? 0) ?? 0;
+      const x = 20 + col * (NODE_W + COL_GAP);
+      const y = yCursor + LANE_HEADER_H + LANE_PAD_TOP + rowIdx * (NODE_H + ROW_GAP);
+      positioned.push({ task: t, x, y, col, laneId, ghost: ghostIds.has(t.id) });
     }
+
     yCursor += laneHeight + 8;
   };
 
