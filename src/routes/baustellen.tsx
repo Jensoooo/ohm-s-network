@@ -17,6 +17,8 @@ function BaustellenPage() {
   const projects = useStore((s) => s.projects);
   const customers = useStore((s) => s.customers);
   const users = useStore((s) => s.users);
+  const closeProject = useStore((s) => s.closeProject);
+  const deleteProject = useStore((s) => s.deleteProject);
   const derived = useDerivedTasks();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
