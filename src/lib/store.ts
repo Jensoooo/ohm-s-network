@@ -190,6 +190,51 @@ export const useStore = create<StoreState>((set, get) => ({
     await get().load();
   },
 
+  bulkSetStatus: async (ids, status) => {
+    if (!ids.length) return;
+    await supabase
+      .from("tasks")
+      .update({ status, done_at: status === "done" ? new Date().toISOString() : null })
+      .in("id", ids);
+    await get().load();
+  },
+
+  bulkDelete: async (ids) => {
+    if (!ids.length) return;
+    await supabase.from("task_dependencies").delete().in("task_id", ids);
+    await supabase.from("task_dependencies").delete().in("depends_on_id", ids);
+    await supabase.from("tasks").delete().in("id", ids);
+    await get().load();
+  },
+
+  closeProject: async (projectId) => {
+    const { data: openTasks } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("project_id", projectId)
+      .neq("status", "done");
+    if (openTasks?.length) {
+      await supabase
+        .from("tasks")
+        .update({ status: "done", done_at: new Date().toISOString() })
+        .in("id", openTasks.map((t) => t.id));
+    }
+    await supabase.from("projects").update({ status: "completed" }).eq("id", projectId);
+    await get().load();
+  },
+
+  deleteProject: async (projectId) => {
+    const { data: pTasks } = await supabase.from("tasks").select("id").eq("project_id", projectId);
+    const ids = (pTasks ?? []).map((t) => t.id);
+    if (ids.length) {
+      await supabase.from("task_dependencies").delete().in("task_id", ids);
+      await supabase.from("task_dependencies").delete().in("depends_on_id", ids);
+    }
+    await supabase.from("tasks").delete().eq("project_id", projectId);
+    await supabase.from("projects").delete().eq("id", projectId);
+    await get().load();
+  },
+
   createCustomer: async (input) => {
     const { data, error } = await supabase
       .from("customers")
