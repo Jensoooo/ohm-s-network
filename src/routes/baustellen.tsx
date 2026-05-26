@@ -60,6 +60,49 @@ function BaustellenPage() {
             ))}
           </ul>
         )}
+
+        <button
+          onClick={async () => {
+            if (!confirm("Alle offenen Tasks als erledigt markieren?")) return;
+            await closeProject(active.id);
+            setActiveProjectId(null);
+          }}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            background: "rgba(20,184,166,0.1)",
+            border: "1px solid rgba(20,184,166,0.3)",
+            color: "#2dd4bf",
+            borderRadius: 20,
+            padding: "10px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          ✓ Projekt abschließen
+        </button>
+        <button
+          onClick={async () => {
+            if (!confirm("Projekt und ALLE zugehörigen Tasks löschen? Das kann nicht rückgängig gemacht werden.")) return;
+            await deleteProject(active.id);
+            setActiveProjectId(null);
+          }}
+          style={{
+            width: "100%",
+            marginTop: 8,
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            color: "#ef4444",
+            borderRadius: 20,
+            padding: "10px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          🗑 Projekt löschen
+        </button>
       </div>
     );
   }
