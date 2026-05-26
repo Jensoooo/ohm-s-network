@@ -176,7 +176,6 @@ export function TaskDetailSheet() {
                     )}
                     <Button
                       onClick={() => setStatus(task.id, "done")}
-                      disabled={task.isBlocked}
                       className="rounded-full bg-[var(--teal)] text-black hover:opacity-90"
                     >
                       <CheckCircle2 className="mr-1 h-4 w-4" /> Erledigt
