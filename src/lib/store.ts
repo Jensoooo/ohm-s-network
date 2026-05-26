@@ -54,6 +54,10 @@ interface StoreState {
   updateTask: (id: string, patch: Partial<Task>, deps?: string[]) => Promise<void>;
   setStatus: (id: string, status: TaskStatus) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  bulkSetStatus: (ids: string[], status: TaskStatus) => Promise<void>;
+  bulkDelete: (ids: string[]) => Promise<void>;
+  closeProject: (projectId: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   createCustomer: (input: Partial<Customer> & { name: string }) => Promise<Customer>;
   createProject: (input: CreateProjectInput) => Promise<string>;
 }
