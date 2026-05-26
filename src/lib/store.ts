@@ -54,6 +54,10 @@ interface StoreState {
   updateTask: (id: string, patch: Partial<Task>, deps?: string[]) => Promise<void>;
   setStatus: (id: string, status: TaskStatus) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  bulkSetStatus: (ids: string[], status: TaskStatus) => Promise<void>;
+  bulkDelete: (ids: string[]) => Promise<void>;
+  closeProject: (projectId: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   createCustomer: (input: Partial<Customer> & { name: string }) => Promise<Customer>;
   createProject: (input: CreateProjectInput) => Promise<string>;
 }
@@ -183,6 +187,51 @@ export const useStore = create<StoreState>((set, get) => ({
 
   deleteTask: async (id) => {
     await supabase.from("tasks").delete().eq("id", id);
+    await get().load();
+  },
+
+  bulkSetStatus: async (ids, status) => {
+    if (!ids.length) return;
+    await supabase
+      .from("tasks")
+      .update({ status, done_at: status === "done" ? new Date().toISOString() : null })
+      .in("id", ids);
+    await get().load();
+  },
+
+  bulkDelete: async (ids) => {
+    if (!ids.length) return;
+    await supabase.from("task_dependencies").delete().in("task_id", ids);
+    await supabase.from("task_dependencies").delete().in("depends_on_id", ids);
+    await supabase.from("tasks").delete().in("id", ids);
+    await get().load();
+  },
+
+  closeProject: async (projectId) => {
+    const { data: openTasks } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("project_id", projectId)
+      .neq("status", "done");
+    if (openTasks?.length) {
+      await supabase
+        .from("tasks")
+        .update({ status: "done", done_at: new Date().toISOString() })
+        .in("id", openTasks.map((t) => t.id));
+    }
+    await supabase.from("projects").update({ status: "completed" }).eq("id", projectId);
+    await get().load();
+  },
+
+  deleteProject: async (projectId) => {
+    const { data: pTasks } = await supabase.from("tasks").select("id").eq("project_id", projectId);
+    const ids = (pTasks ?? []).map((t) => t.id);
+    if (ids.length) {
+      await supabase.from("task_dependencies").delete().in("task_id", ids);
+      await supabase.from("task_dependencies").delete().in("depends_on_id", ids);
+    }
+    await supabase.from("tasks").delete().eq("project_id", projectId);
+    await supabase.from("projects").delete().eq("id", projectId);
     await get().load();
   },
 
