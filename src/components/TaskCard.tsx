@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useStore, deriveTasks } from "@/lib/store";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
 import type { DerivedTask } from "@/lib/types";
@@ -16,7 +17,15 @@ function formatDeadline(t: DerivedTask) {
   return `${base} · in ${diff}d`;
 }
 
-export function TaskCard({ task }: { task: DerivedTask }) {
+interface TaskCardProps {
+  task: DerivedTask;
+  selectMode?: boolean;
+  selected?: boolean;
+  onLongPress?: () => void;
+  onSelect?: () => void;
+}
+
+export function TaskCard({ task, selectMode, selected, onLongPress, onSelect }: TaskCardProps) {
   const openDetail = useStore((s) => s.openDetail);
   const users = useStore((s) => s.users);
   const areas = useStore((s) => s.areas);
@@ -28,14 +37,47 @@ export function TaskCard({ task }: { task: DerivedTask }) {
   const blocked = task.isBlocked;
   const dot = PRIORITY_DOT[task.priority];
 
-  // Status by FORM, not by color
   const borderColor = done ? withAlpha(style.main, 0.3) : style.main;
   const borderWidth = done ? 1 : 1.5;
   const borderStyle = blocked ? "dashed" : "solid";
 
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+
+  const handlePointerDown = () => {
+    longPressed.current = false;
+    pressTimer.current = setTimeout(() => {
+      longPressed.current = true;
+      onLongPress?.();
+    }, 400);
+  };
+  const handlePointerUp = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  const handlePointerCancel = handlePointerUp;
+
+  const handleClick = () => {
+    if (longPressed.current) {
+      longPressed.current = false;
+      return;
+    }
+    if (selectMode) {
+      onSelect?.();
+    } else {
+      openDetail(task.id);
+    }
+  };
+
   return (
     <button
-      onClick={() => openDetail(task.id)}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerCancel}
+      onPointerCancel={handlePointerCancel}
       className="cut-corner relative w-full text-left p-4 transition-transform active:scale-[0.98]"
       style={{
         background: done ? "transparent" : style.bg,
@@ -43,6 +85,28 @@ export function TaskCard({ task }: { task: DerivedTask }) {
         opacity: done ? 0.38 : 1,
       }}
     >
+      {selectMode && (
+        <span
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: selected ? "#7c3aed" : "rgba(255,255,255,0.1)",
+            border: `2px solid ${selected ? "#7c3aed" : "#475569"}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            color: "white",
+            zIndex: 2,
+          }}
+        >
+          {selected && "✓"}
+        </span>
+      )}
       {done ? (
         <h3 className="truncate text-base font-semibold text-foreground line-through">
           {task.title}
