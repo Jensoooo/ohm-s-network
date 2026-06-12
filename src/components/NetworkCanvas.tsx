@@ -181,8 +181,45 @@ function computeLayout(
   }
   buildLane("__none", "Ohne Bereich", placedTasks.filter((t) => !t.area_id));
 
+  // Backward barycenter pass: pull predecessors towards the average Y of their successors
+  const maxColAll = Math.max(0, ...positioned.map((p) => p.col));
+  for (let iteration = 0; iteration < 3; iteration++) {
+    for (let col = maxColAll - 1; col >= 0; col--) {
+      const lanesInCol = new Set(
+        positioned.filter((p) => p.col === col).map((p) => p.laneId),
+      );
+      for (const laneId of lanesInCol) {
+        const colLaneTasks = positioned.filter(
+          (p) => p.col === col && p.laneId === laneId,
+        );
+        if (colLaneTasks.length === 0) continue;
 
-  const maxCol = Math.max(0, ...positioned.map((p) => p.col));
+        const withTargetY = colLaneTasks.map((pos) => {
+          const successors = positioned.filter((p) =>
+            p.task.dependsOn.some((dep) => dep.id === pos.task.id),
+          );
+          const targetY = successors.length > 0
+            ? successors.reduce((sum, s) => sum + s.y + NODE_H / 2, 0) / successors.length
+            : pos.y + NODE_H / 2;
+          return { pos, targetY };
+        });
+
+        withTargetY.sort((a, b) => a.targetY - b.targetY);
+
+        // Keep tasks within the lane's vertical extent
+        const lane = lanes.find((l) => l.id === laneId);
+        const laneTop = lane ? lane.yTop + LANE_HEADER_H + LANE_PAD_TOP : 0;
+        const originalYs = colLaneTasks.map((p) => p.y).sort((a, b) => a - b);
+        const startY = originalYs[0] ?? laneTop;
+
+        withTargetY.forEach(({ pos }, i) => {
+          pos.y = startY + i * (NODE_H + ROW_GAP);
+        });
+      }
+    }
+  }
+
+  const maxCol = maxColAll;
   const width = 40 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
   const height = Math.max(400, yCursor + 24);
   return { positioned, lanes, width, height };
