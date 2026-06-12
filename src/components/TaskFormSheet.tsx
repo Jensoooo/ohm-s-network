@@ -62,8 +62,14 @@ export function TaskFormSheet() {
 
 
   const candidateDeps = useMemo(
-    () => tasks.filter((t) => !existing || t.id !== existing.id),
-    [tasks, existing],
+    () => tasks
+      .filter((t) => !existing || t.id !== existing.id)
+      .sort((a, b) => {
+        const aSelected = selectedDeps.includes(a.id) ? 0 : 1;
+        const bSelected = selectedDeps.includes(b.id) ? 0 : 1;
+        return aSelected - bSelected;
+      }),
+    [tasks, existing, selectedDeps],
   );
 
   const handleSave = async () => {

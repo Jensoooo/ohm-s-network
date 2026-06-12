@@ -145,14 +145,24 @@ function computeLayout(
     for (const col of sortedCols) {
       const colTasks = byCols.get(col)!;
       if (col === sortedCols[0]) {
-        colTasks.sort((a, b) => a.title.localeCompare(b.title));
+        colTasks.sort((a, b) => {
+          const aDone = a.effectiveStatus === "done" ? 1 : 0;
+          const bDone = b.effectiveStatus === "done" ? 1 : 0;
+          if (aDone !== bDone) return aDone - bDone;
+          return a.title.localeCompare(b.title);
+        });
       } else {
         const barycenter = (t: DerivedTask): number => {
           const preds = t.dependsOn.filter((dep) => placedY.has(dep.id));
           if (preds.length === 0) return 999999;
           return preds.reduce((sum, dep) => sum + (placedY.get(dep.id) ?? 0), 0) / preds.length;
         };
-        colTasks.sort((a, b) => barycenter(a) - barycenter(b));
+        colTasks.sort((a, b) => {
+          const aDone = a.effectiveStatus === "done" ? 1 : 0;
+          const bDone = b.effectiveStatus === "done" ? 1 : 0;
+          if (aDone !== bDone) return aDone - bDone;
+          return barycenter(a) - barycenter(b);
+        });
       }
 
       colTasks.forEach((t, i) => {
