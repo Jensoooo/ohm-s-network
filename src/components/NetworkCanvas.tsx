@@ -229,6 +229,7 @@ interface NetworkCanvasProps {
   connectMode?: boolean;
   connectSource?: string | null;
   onConnectTap?: (taskId: string) => void;
+  showDone?: boolean;
 }
 
 function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
@@ -242,7 +243,7 @@ function compactDeadline(task: DerivedTask): { text: string; color: string } | n
   return { text: fmt, color: "#94a3b8" };
 }
 
-export function NetworkCanvas({ connectMode = false, connectSource = null, onConnectTap }: NetworkCanvasProps = {}) {
+export function NetworkCanvas({ connectMode = false, connectSource = null, onConnectTap, showDone = false }: NetworkCanvasProps = {}) {
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openDetail = useStore((s) => s.openDetail);
@@ -255,12 +256,13 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   const visibleTaskIds = useMemo(() => {
     return new Set(
       derived
+        .filter((t) => showDone || t.effectiveStatus !== "done")
         .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
         .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
         .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
         .map((t) => t.id),
     );
-  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds]);
+  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, showDone]);
 
   const showGhosts = filterAreaIds.length > 0 || filterOwnerIds.length > 0 || filterProjectIds.length > 0;
 
