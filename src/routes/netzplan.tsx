@@ -29,6 +29,7 @@ function NetzplanPage() {
 
   const [connectMode, setConnectMode] = useState(false);
   const [connectSource, setConnectSource] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
   const exitConnectMode = () => { setConnectMode(false); setConnectSource(null); };
 
   const handleConnectTap = async (taskId: string) => {
