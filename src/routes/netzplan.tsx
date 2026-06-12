@@ -29,6 +29,7 @@ function NetzplanPage() {
 
   const [connectMode, setConnectMode] = useState(false);
   const [connectSource, setConnectSource] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
   const exitConnectMode = () => { setConnectMode(false); setConnectSource(null); };
 
   const handleConnectTap = async (taskId: string) => {
@@ -55,7 +56,16 @@ function NetzplanPage() {
               : "Ziehen zum Verschieben"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showDone}
+              onChange={(e) => setShowDone(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[#c084fc]"
+            />
+            Erledigte
+          </label>
           {connectMode && (
             <Button onClick={exitConnectMode} variant="outline" className="rounded-full border-border text-xs px-3 py-1.5 h-auto">
               Fertig
@@ -110,6 +120,7 @@ function NetzplanPage() {
           connectMode={connectMode}
           connectSource={connectSource}
           onConnectTap={handleConnectTap}
+          showDone={showDone}
         />
       </div>
     </div>
