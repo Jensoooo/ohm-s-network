@@ -120,6 +120,7 @@ function NetzplanPage() {
           connectMode={connectMode}
           connectSource={connectSource}
           onConnectTap={handleConnectTap}
+          showDone={showDone}
         />
       </div>
     </div>
