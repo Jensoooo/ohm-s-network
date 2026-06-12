@@ -20,10 +20,18 @@ function sortTasks(tasks: DerivedTask[], by: SortBy, users: User[]): DerivedTask
   if (by === "auto") return base.sort(sortAsap);
   if (by === "prio") {
     const po: Record<Priority, number> = { hoch: 0, mittel: 1, niedrig: 2 };
-    return base.sort((a, b) => po[a.priority] - po[b.priority]);
+    return base.sort((a, b) => {
+      const aDone = a.effectiveStatus === "done" ? 1 : 0;
+      const bDone = b.effectiveStatus === "done" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return po[a.priority] - po[b.priority];
+    });
   }
   if (by === "frist") {
     return base.sort((a, b) => {
+      const aDone = a.effectiveStatus === "done" ? 1 : 0;
+      const bDone = b.effectiveStatus === "done" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
       if (a.no_deadline && b.no_deadline) return 0;
       if (a.no_deadline) return 1;
       if (b.no_deadline) return -1;
@@ -32,6 +40,9 @@ function sortTasks(tasks: DerivedTask[], by: SortBy, users: User[]): DerivedTask
   }
   if (by === "bearbeiter") {
     return base.sort((a, b) => {
+      const aDone = a.effectiveStatus === "done" ? 1 : 0;
+      const bDone = b.effectiveStatus === "done" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
       const na = users.find((u) => u.id === a.owner_id)?.name ?? "ZZZ";
       const nb = users.find((u) => u.id === b.owner_id)?.name ?? "ZZZ";
       return na.localeCompare(nb);
@@ -102,11 +113,10 @@ function TasksPage() {
       )
       .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)));
 
-    const open = filtered.filter((t) => t.effectiveStatus !== "done");
-    return sortTasks(open, sortBy, users);
+    return sortTasks(filtered, sortBy, users);
   }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, sortBy, users]);
 
-  const openCount = tasks.length;
+  const openCount = tasks.filter((t) => t.effectiveStatus !== "done").length;
   const selCount = selectedIds.size;
 
   return (
