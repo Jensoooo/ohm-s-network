@@ -8,9 +8,9 @@ import type { DerivedTask } from "@/lib/types";
 const NODE_W = 160;
 const NODE_H = 84;
 const COL_GAP = 28;
-const ROW_GAP = 56;
+const ROW_GAP = 60;
 const PAD_X = 20;
-const PAD_Y = 36; // FIX: erhöht, damit Bereichs-Labels oben nicht abgeschnitten werden
+const PAD_Y = 48; // FIX: Platz für Bereichs-Labels oben
 
 interface Positioned {
   task: DerivedTask;
@@ -21,11 +21,115 @@ interface Positioned {
   ghost: boolean;
 }
 
+// ─── Crossing-Reduction: paarweise Swaps ──────────────────────────────────────
+function countCrossingsBetweenRows(
+  rowA: DerivedTask[],
+  rowB: DerivedTask[],
+  colByTask: Map<string, number>,
+  placedIds: Set<string>,
+): number {
+  let crossings = 0;
+  for (let i = 0; i < rowB.length; i++) {
+    const tB = rowB[i];
+    const colB = colByTask.get(tB.id) ?? i;
+    for (const dep of tB.dependsOn.filter((d) => placedIds.has(d.id))) {
+      const colA = colByTask.get(dep.id);
+      if (colA === undefined) continue;
+      for (let j = i + 1; j < rowB.length; j++) {
+        const tB2 = rowB[j];
+        const colB2 = colByTask.get(tB2.id) ?? j;
+        for (const dep2 of tB2.dependsOn.filter((d) => placedIds.has(d.id))) {
+          const colA2 = colByTask.get(dep2.id);
+          if (colA2 === undefined) continue;
+          if ((colA < colA2 && colB > colB2) || (colA > colA2 && colB < colB2)) {
+            crossings++;
+          }
+        }
+      }
+    }
+  }
+  return crossings;
+}
+
+function swapReduce(
+  row: number,
+  byRow: DerivedTask[][],
+  colByTask: Map<string, number>,
+  placedIds: Set<string>,
+  maxRow: number,
+) {
+  const rowTasks = byRow[row];
+  if (rowTasks.length < 2) return;
+  let improved = true;
+  let iterations = 0;
+  while (improved && iterations++ < 20) {
+    improved = false;
+    for (let i = 0; i < rowTasks.length - 1; i++) {
+      const tA = rowTasks[i];
+      const tB = rowTasks[i + 1];
+      const before =
+        (row > 0 ? countCrossingsBetweenRows(byRow[row - 1], rowTasks, colByTask, placedIds) : 0) +
+        (row < maxRow ? countCrossingsBetweenRows(rowTasks, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
+      // Tausch
+      colByTask.set(tA.id, i + 1);
+      colByTask.set(tB.id, i);
+      rowTasks[i] = tB;
+      rowTasks[i + 1] = tA;
+      const after =
+        (row > 0 ? countCrossingsBetweenRows(byRow[row - 1], rowTasks, colByTask, placedIds) : 0) +
+        (row < maxRow ? countCrossingsBetweenRows(rowTasks, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
+      if (after >= before) {
+        // Rücktauschen
+        colByTask.set(tA.id, i);
+        colByTask.set(tB.id, i + 1);
+        rowTasks[i] = tA;
+        rowTasks[i + 1] = tB;
+      } else {
+        improved = true;
+      }
+    }
+  }
+}
+
+// ─── Chain-Detection: zusammenhängende Teilgraphen finden ────────────────────
+function findConnectedChains(tasks: DerivedTask[], placedIds: Set<string>): string[][] {
+  const adjList = new Map<string, Set<string>>();
+  for (const t of tasks) {
+    if (!adjList.has(t.id)) adjList.set(t.id, new Set());
+    for (const dep of t.dependsOn) {
+      if (!placedIds.has(dep.id)) continue;
+      adjList.get(t.id)!.add(dep.id);
+      if (!adjList.has(dep.id)) adjList.set(dep.id, new Set());
+      adjList.get(dep.id)!.add(t.id);
+    }
+  }
+  const visited = new Set<string>();
+  const chains: string[][] = [];
+  for (const t of tasks) {
+    if (visited.has(t.id)) continue;
+    const chain: string[] = [];
+    const queue = [t.id];
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      chain.push(id);
+      for (const nb of adjList.get(id) ?? []) {
+        if (!visited.has(nb)) queue.push(nb);
+      }
+    }
+    chains.push(chain);
+  }
+  return chains;
+}
+
+// ─── Haupt-Layout-Funktion ────────────────────────────────────────────────────
 function computeLayout(
   tasks: DerivedTask[],
   visibleTaskIds: Set<string>,
   showGhosts: boolean,
 ) {
+  // Ghost-Nodes
   const ghostIds = new Set<string>();
   if (showGhosts) {
     for (const t of tasks) {
@@ -39,7 +143,7 @@ function computeLayout(
   const placedTasks = tasks.filter((t) => placedIds.has(t.id));
   if (placedTasks.length === 0) return { positioned: [], width: 400, height: 400 };
 
-  // 1) ROW via Longest-Path
+  // ── SCHRITT 1: ROW via Longest-Path ───────────────────────────────────────
   const rowByTask = new Map<string, number>();
   const remaining = new Set(placedTasks.map((t) => t.id));
   let safe = 0;
@@ -69,14 +173,33 @@ function computeLayout(
       rowByTask.set(t.id, Math.max(rowByTask.get(t.id) ?? 0, maxActiveRow + 1));
   }
 
+  // ── SCHRITT 2: Chains finden und Col-Offsets zuweisen ─────────────────────
+  // Chains die keine gemeinsamen Nodes teilen, können in separaten Col-Gruppen
+  // nebeneinander gestapelt werden → reduziert Breite erheblich
+  const chains = findConnectedChains(placedTasks, placedIds);
+  
+  // Sortiere Chains nach Größe (größte zuerst) für kompakteres Layout
+  chains.sort((a, b) => b.length - a.length);
+  
+  // Für jeden Task: welche Chain gehört er?
+  const chainByTask = new Map<string, number>();
+  chains.forEach((chain, ci) => chain.forEach((id) => chainByTask.set(id, ci)));
+
+  // ── SCHRITT 3: COL via Barycenter + Crossing-Reduction ────────────────────
   const maxRow = Math.max(...Array.from(rowByTask.values()));
   const byRow: DerivedTask[][] = Array.from({ length: maxRow + 1 }, () => []);
   for (const t of placedTasks) byRow[rowByTask.get(t.id) ?? 0].push(t);
 
-  // 2) COL via Barycenter – 3 Passes vor+rück für bessere Konvergenz
   const colByTask = new Map<string, number>();
+
+  // Init: nach Chain-Index dann alphabetisch, so dass Chains zusammenbleiben
   for (const rowTasks of byRow) {
-    rowTasks.sort((a, b) => a.title.localeCompare(b.title));
+    rowTasks.sort((a, b) => {
+      const ca = chainByTask.get(a.id) ?? 0;
+      const cb = chainByTask.get(b.id) ?? 0;
+      if (ca !== cb) return ca - cb;
+      return a.title.localeCompare(b.title);
+    });
     rowTasks.forEach((t, i) => colByTask.set(t.id, i));
   }
 
@@ -87,12 +210,13 @@ function computeLayout(
       successorsByTask.get(dep.id)!.push(t.id);
     }
 
+  // 3 Barycenter-Passes (vor+rück) + Crossing-Reduction nach jedem Pass
   for (let pass = 0; pass < 3; pass++) {
-    // Vorwärts: Nachfolger richten sich nach Vorgängern
+    // Vorwärts: Nachfolger orientieren sich an Vorgängern
     for (let row = 1; row <= maxRow; row++) {
       const rowTasks = byRow[row];
       if (!rowTasks.length) continue;
-      rowTasks.map((t) => {
+      const sorted = rowTasks.map((t) => {
         const preds = t.dependsOn.filter((d) => placedIds.has(d.id));
         return {
           t,
@@ -100,13 +224,15 @@ function computeLayout(
             ? preds.reduce((s, d) => s + (colByTask.get(d.id) ?? 0), 0) / preds.length
             : colByTask.get(t.id) ?? 0,
         };
-      }).sort((a, b) => a.bary - b.bary).forEach(({ t }, i) => colByTask.set(t.id, i));
+      }).sort((a, b) => a.bary - b.bary);
+      sorted.forEach(({ t }, i) => { colByTask.set(t.id, i); byRow[row][i] = t; });
+      swapReduce(row, byRow, colByTask, placedIds, maxRow);
     }
-    // Rückwärts: Vorgänger richten sich nach Nachfolgern
+    // Rückwärts: Vorgänger orientieren sich an Nachfolgern
     for (let row = maxRow - 1; row >= 0; row--) {
       const rowTasks = byRow[row];
       if (!rowTasks.length) continue;
-      rowTasks.map((t) => {
+      const sorted = rowTasks.map((t) => {
         const succs = (successorsByTask.get(t.id) ?? []).filter((id) => placedIds.has(id));
         return {
           t,
@@ -114,11 +240,13 @@ function computeLayout(
             ? succs.reduce((s, id) => s + (colByTask.get(id) ?? 0), 0) / succs.length
             : colByTask.get(t.id) ?? 0,
         };
-      }).sort((a, b) => a.bary - b.bary).forEach(({ t }, i) => colByTask.set(t.id, i));
+      }).sort((a, b) => a.bary - b.bary);
+      sorted.forEach(({ t }, i) => { colByTask.set(t.id, i); byRow[row][i] = t; });
+      swapReduce(row, byRow, colByTask, placedIds, maxRow);
     }
   }
 
-  // 3) Pixel-Koordinaten – FIX: LINKSBÜNDIG statt zentriert
+  // ── SCHRITT 4: Pixel-Koordinaten (linksbündig) ────────────────────────────
   const maxCols = Math.max(...byRow.map((r) => r.length), 1);
   const totalWidth = PAD_X * 2 + maxCols * NODE_W + (maxCols - 1) * COL_GAP;
   const positioned: Positioned[] = [];
@@ -130,7 +258,7 @@ function computeLayout(
     rowTasks.forEach((t, colIndex) => {
       positioned.push({
         task: t,
-        x: PAD_X + colIndex * (NODE_W + COL_GAP), // FIX: linksbündig
+        x: PAD_X + colIndex * (NODE_W + COL_GAP),
         y: PAD_Y + row * (NODE_H + ROW_GAP),
         row,
         col: colIndex,
@@ -146,6 +274,7 @@ function computeLayout(
   };
 }
 
+// ─── Deadline-Anzeige ─────────────────────────────────────────────────────────
 function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
   if (task.no_deadline || !task.deadline) return null;
   const d = new Date(task.deadline);
@@ -157,18 +286,22 @@ function compactDeadline(task: DerivedTask): { text: string; color: string } | n
   return { text: fmt, color: "#94a3b8" };
 }
 
+// ─── Props ────────────────────────────────────────────────────────────────────
 interface NetworkCanvasProps {
   connectMode?: boolean;
   connectSource?: string | null;
   onConnectTap?: (taskId: string) => void;
   showDone?: boolean;
+  onScrollInfo?: (info: { scrollX: number; containerWidth: number; contentWidth: number }) => void;
 }
 
+// ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export function NetworkCanvas({
   connectMode = false,
   connectSource = null,
   onConnectTap,
   showDone = false,
+  onScrollInfo,
 }: NetworkCanvasProps = {}) {
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
@@ -201,6 +334,7 @@ export function NetworkCanvas({
   const posById = useMemo(() => new Map(positioned.map((p) => [p.task.id, p])), [positioned]);
   const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
 
+  // ── Scroll-Container ──────────────────────────────────────────────────────
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollX, setScrollX] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -208,16 +342,23 @@ export function NetworkCanvas({
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const obs = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    const obs = new ResizeObserver(() => {
+      setContainerWidth(el.clientWidth);
+      onScrollInfo?.({ scrollX: el.scrollLeft, containerWidth: el.clientWidth, contentWidth: width });
+    });
     obs.observe(el);
     setContainerWidth(el.clientWidth);
     return () => obs.disconnect();
-  }, []);
+  }, [width, onScrollInfo]);
 
   const onScroll = useCallback(() => {
-    if (scrollContainerRef.current) setScrollX(scrollContainerRef.current.scrollLeft);
-  }, []);
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    setScrollX(el.scrollLeft);
+    onScrollInfo?.({ scrollX: el.scrollLeft, containerWidth: el.clientWidth, contentWidth: width });
+  }, [width, onScrollInfo]);
 
+  // ── Scrollbar-Thumb ───────────────────────────────────────────────────────
   const scrollbarVisible = width > containerWidth;
   const thumbWidth = scrollbarVisible ? Math.max(40, (containerWidth / width) * containerWidth) : containerWidth;
   const thumbLeft = scrollbarVisible ? (scrollX / (width - containerWidth)) * (containerWidth - thumbWidth) : 0;
@@ -237,6 +378,7 @@ export function NetworkCanvas({
   };
   const onThumbPointerUp = () => { thumbDragRef.current = null; };
 
+  // ── Node-Drag ─────────────────────────────────────────────────────────────
   const [nodeDrag, setNodeDrag] = useState<{ taskId: string; cx: number; cy: number } | null>(null);
   const nodeDragInit = useRef<{
     taskId: string; startClientX: number; startClientY: number;
@@ -296,6 +438,7 @@ export function NetworkCanvas({
 
   return (
     <div className="flex flex-col h-full" style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}>
+      {/* Canvas – vertikal scrollbar per normalem Touch, horizontal per Scrollbar */}
       <div
         ref={scrollContainerRef}
         onScroll={onScroll}
@@ -303,6 +446,7 @@ export function NetworkCanvas({
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         <div style={{ width, height, position: "relative", flexShrink: 0 }}>
+          {/* SVG-Pfeile */}
           <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
             <defs>
               <marker id="arrow-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
@@ -348,6 +492,7 @@ export function NetworkCanvas({
             )}
           </svg>
 
+          {/* Task-Nodes */}
           {positioned.map((p) => {
             const owner = users.find((u) => u.id === p.task.owner_id);
             const style = ownerStyle(owner);
@@ -433,6 +578,7 @@ export function NetworkCanvas({
             );
           })}
 
+          {/* Drag-Ghost */}
           {nodeDrag && (() => {
             const p = posById.get(nodeDrag.taskId);
             if (!p) return null;
@@ -456,9 +602,10 @@ export function NetworkCanvas({
         </div>
       </div>
 
-      {/* Scrollbar – sitzt am unteren Rand des Canvas-Bereichs */}
+      {/* Horizontale Scrollbar – immer sichtbar wenn nötig */}
       {scrollbarVisible && (
-        <div className="relative mx-4 my-2 rounded-full" style={{ height: 4, background: "rgba(167,139,250,0.12)" }}>
+        <div className="relative mx-4 my-2 rounded-full flex-shrink-0"
+          style={{ height: 4, background: "rgba(167,139,250,0.12)" }}>
           <div
             className="absolute top-0 rounded-full cursor-grab active:cursor-grabbing"
             style={{ left: thumbLeft, width: thumbWidth, height: 4, background: "rgba(167,139,250,0.55)", touchAction: "none" }}
