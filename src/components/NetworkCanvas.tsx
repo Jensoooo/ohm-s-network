@@ -1,55 +1,41 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useDerivedTasks } from "./TaskCard";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
 import type { DerivedTask } from "@/lib/types";
 
-const NODE_W = 172;
-const NODE_H = 88;
-const COL_GAP = 80;
-const ROW_GAP = 24;
-const LANE_HEADER_H = 36;
-const LANE_PAD_TOP = 12;
-const LANE_PAD_BOT = 16;
+// ─── Konstanten ────────────────────────────────────────────────────────────────
+const NODE_W = 160;
+const NODE_H = 84;
+const COL_GAP = 28;   // horizontal zwischen parallelen Tasks
+const ROW_GAP = 56;   // vertikal zwischen Abhängigkeits-Ebenen (Platz für Pfeile)
+const PAD_X = 20;
+const PAD_Y = 20;
 
 interface Positioned {
   task: DerivedTask;
   x: number;
   y: number;
-  col: number;
-  laneId: string;
+  row: number; // Abhängigkeits-Tiefe (0 = kein Vorgänger)
+  col: number; // Position innerhalb der Zeile
   ghost: boolean;
 }
 
-interface LaneLayout { id: string; name: string; yTop: number; height: number }
-
+// ─── Layout-Algorithmus ────────────────────────────────────────────────────────
+/**
+ * Top-to-bottom Sugiyama-inspiriertes Layout:
+ * - ROW = Abhängigkeits-Tiefe (Vorgänger immer in früherer Zeile)
+ * - COL = Position innerhalb der Zeile, optimiert für kurze Pfeile
+ * - Done-Tasks immer in den letzten Zeilen
+ * - Mehrere Barycenter-Passes für kurze Pfeile
+ */
 function computeLayout(
   tasks: DerivedTask[],
-  areas: { id: string; name: string; sort_order: number }[],
   visibleTaskIds: Set<string>,
   showGhosts: boolean,
 ) {
-  // --- Topologische Spalten (X-Position) ---
-  const colByTask = new Map<string, number>();
-  const remaining = new Set(tasks.map((t) => t.id));
-  let safe = 0;
-  while (remaining.size > 0 && safe++ < 2000) {
-    let progressed = false;
-    for (const id of Array.from(remaining)) {
-      const t = tasks.find((x) => x.id === id)!;
-      const depCols = t.dependsOn.map((d) => colByTask.get(d.id));
-      if (depCols.every((c) => c !== undefined)) {
-        const col = depCols.length ? Math.max(...(depCols as number[])) + 1 : 0;
-        colByTask.set(id, col);
-        remaining.delete(id);
-        progressed = true;
-      }
-    }
-    if (!progressed) { for (const id of remaining) colByTask.set(id, 0); break; }
-  }
-
-  // --- Ghost-Node Bestimmung ---
+  // Ghost-Nodes: Vorgänger die außerhalb des Filters liegen
   const ghostIds = new Set<string>();
   if (showGhosts) {
     for (const t of tasks) {
@@ -62,176 +48,138 @@ function computeLayout(
   const placedIds = new Set([...visibleTaskIds, ...ghostIds]);
   const placedTasks = tasks.filter((t) => placedIds.has(t.id));
 
-  // --- Zeilen-Zuweisung (ROW ASSIGNMENT) ---
-  const rowByTask = new Map<string, number>();
+  if (placedTasks.length === 0) return { positioned: [], width: 400, height: 400 };
 
-  const successors = new Map<string, string[]>();
+  // 1) ROW-Zuweisung via Longest-Path (Vorgänger immer in früherer Zeile)
+  const rowByTask = new Map<string, number>();
+  const remaining = new Set(placedTasks.map((t) => t.id));
+  let safe = 0;
+  while (remaining.size > 0 && safe++ < 5000) {
+    let progressed = false;
+    for (const id of Array.from(remaining)) {
+      const t = placedTasks.find((x) => x.id === id)!;
+      const predRows = t.dependsOn
+        .filter((d) => placedIds.has(d.id))
+        .map((d) => rowByTask.get(d.id));
+      if (predRows.every((r) => r !== undefined)) {
+        const maxPredRow = predRows.length > 0 ? Math.max(...(predRows as number[])) : -1;
+        rowByTask.set(id, maxPredRow + 1);
+        remaining.delete(id);
+        progressed = true;
+      }
+    }
+    // Zyklen-Fallback
+    if (!progressed) {
+      for (const id of remaining) rowByTask.set(id, 0);
+      break;
+    }
+  }
+
+  // Done-Tasks: in eine eigene "Done-Zone" am Ende schieben
+  const maxActiveRow = Math.max(
+    0,
+    ...placedTasks
+      .filter((t) => t.effectiveStatus !== "done")
+      .map((t) => rowByTask.get(t.id) ?? 0),
+  );
+  for (const t of placedTasks) {
+    if (t.effectiveStatus === "done") {
+      const currentRow = rowByTask.get(t.id) ?? 0;
+      rowByTask.set(t.id, Math.max(currentRow, maxActiveRow + 1));
+    }
+  }
+
+  // 2) Tasks nach Zeilen gruppieren
+  const maxRow = Math.max(...Array.from(rowByTask.values()));
+  const byRow: DerivedTask[][] = Array.from({ length: maxRow + 1 }, () => []);
+  for (const t of placedTasks) {
+    const row = rowByTask.get(t.id) ?? 0;
+    byRow[row].push(t);
+  }
+
+  // 3) COL-Zuweisung: Barycenter-Heuristik (Nachfolger unter Vorgänger)
+  // Initialisierung: alphabetisch innerhalb jeder Zeile
+  const colByTask = new Map<string, number>();
+  for (const rowTasks of byRow) {
+    rowTasks.sort((a, b) => a.title.localeCompare(b.title));
+    rowTasks.forEach((t, i) => colByTask.set(t.id, i));
+  }
+
+  // Vorwärts-Pass: Task-Position = Durchschnitt der Vorgänger-Positionen
+  for (let row = 1; row <= maxRow; row++) {
+    const rowTasks = byRow[row];
+    if (rowTasks.length === 0) continue;
+    const withBary = rowTasks.map((t) => {
+      const preds = t.dependsOn.filter((d) => placedIds.has(d.id));
+      const bary =
+        preds.length > 0
+          ? preds.reduce((sum, d) => sum + (colByTask.get(d.id) ?? 0), 0) / preds.length
+          : colByTask.get(t.id) ?? 0;
+      return { t, bary };
+    });
+    withBary.sort((a, b) => a.bary - b.bary);
+    withBary.forEach(({ t }, i) => colByTask.set(t.id, i));
+  }
+
+  // Rückwärts-Pass: Task-Position = Durchschnitt der Nachfolger-Positionen
+  const successorsByTask = new Map<string, string[]>();
   for (const t of placedTasks) {
     for (const dep of t.dependsOn) {
-      if (!successors.has(dep.id)) successors.set(dep.id, []);
-      successors.get(dep.id)!.push(t.id);
+      if (!successorsByTask.has(dep.id)) successorsByTask.set(dep.id, []);
+      successorsByTask.get(dep.id)!.push(t.id);
     }
   }
-
-  const inDegree = new Map<string, number>();
-  for (const t of placedTasks) {
-    inDegree.set(t.id, t.dependsOn.filter((d) => placedIds.has(d.id)).length);
-  }
-
-  let nextRow = 0;
-
-  function assignRow(taskId: string, row: number) {
-    if (rowByTask.has(taskId)) return;
-    rowByTask.set(taskId, row);
-
-    const childs = (successors.get(taskId) ?? [])
-      .filter((id) => placedIds.has(id))
-      .sort((a, b) => (colByTask.get(a) ?? 0) - (colByTask.get(b) ?? 0));
-
-    if (childs.length === 0) return;
-
-    if (childs.length === 1) {
-      assignRow(childs[0], row);
-    } else {
-      assignRow(childs[0], row);
-      for (let i = 1; i < childs.length; i++) {
-        nextRow = Math.max(nextRow, ...Array.from(rowByTask.values())) + 2;
-        assignRow(childs[i], nextRow);
-      }
-    }
-  }
-
-  const sources = placedTasks
-    .filter((t) => (inDegree.get(t.id) ?? 0) === 0)
-    .sort((a, b) => {
-      if (a.area_id !== b.area_id) return (a.area_id ?? "").localeCompare(b.area_id ?? "");
-      return a.title.localeCompare(b.title);
+  for (let row = maxRow - 1; row >= 0; row--) {
+    const rowTasks = byRow[row];
+    if (rowTasks.length === 0) continue;
+    const withBary = rowTasks.map((t) => {
+      const succs = successorsByTask.get(t.id) ?? [];
+      const placedSuccs = succs.filter((id) => placedIds.has(id));
+      const bary =
+        placedSuccs.length > 0
+          ? placedSuccs.reduce((sum, id) => sum + (colByTask.get(id) ?? 0), 0) / placedSuccs.length
+          : colByTask.get(t.id) ?? 0;
+      return { t, bary };
     });
-
-  for (const src of sources) {
-    nextRow = rowByTask.size === 0 ? 0 : Math.max(...Array.from(rowByTask.values())) + 2;
-    assignRow(src.id, nextRow);
+    withBary.sort((a, b) => a.bary - b.bary);
+    withBary.forEach(({ t }, i) => colByTask.set(t.id, i));
   }
 
-  for (const t of placedTasks) {
-    if (!rowByTask.has(t.id)) {
-      rowByTask.set(t.id, Math.max(0, ...Array.from(rowByTask.values())) + 2);
-    }
-  }
+  // 4) Pixel-Koordinaten berechnen
+  // Maximale Spaltenanzahl pro Zeile → Gesamtbreite
+  const maxCols = Math.max(...byRow.map((r) => r.length), 1);
+  const totalWidth = PAD_X * 2 + maxCols * NODE_W + (maxCols - 1) * COL_GAP;
 
-  // --- Swimlane Layout ---
-  const orderedAreas = [...areas].sort((a, b) => a.sort_order - b.sort_order);
-  const lanes: LaneLayout[] = [];
+  // Jede Zeile zentriert ausrichten
   const positioned: Positioned[] = [];
-  let yCursor = 12;
-  const placedY = new Map<string, number>();
+  for (let row = 0; row <= maxRow; row++) {
+    const rowTasks = byRow[row];
+    if (rowTasks.length === 0) continue;
+    const rowWidth = rowTasks.length * NODE_W + (rowTasks.length - 1) * COL_GAP;
+    const rowStartX = (totalWidth - rowWidth) / 2;
 
-  const buildLane = (laneId: string, name: string, inLane: DerivedTask[]) => {
-    if (inLane.length === 0) return;
+    // Sortierung final anwenden (nach colByTask)
+    rowTasks.sort((a, b) => (colByTask.get(a.id) ?? 0) - (colByTask.get(b.id) ?? 0));
 
-    // Group lane tasks by column
-    const byCols = new Map<number, DerivedTask[]>();
-    for (const t of inLane) {
-      const col = colByTask.get(t.id) ?? 0;
-      if (!byCols.has(col)) byCols.set(col, []);
-      byCols.get(col)!.push(t);
-    }
-
-    const maxColCount = Math.max(...Array.from(byCols.values()).map((c) => c.length));
-    const laneHeight = LANE_HEADER_H + LANE_PAD_TOP + maxColCount * NODE_H + (maxColCount - 1) * ROW_GAP + LANE_PAD_BOT;
-    lanes.push({ id: laneId, name, yTop: yCursor, height: laneHeight });
-
-    const sortedCols = Array.from(byCols.keys()).sort((a, b) => a - b);
-    for (const col of sortedCols) {
-      const colTasks = byCols.get(col)!;
-      if (col === sortedCols[0]) {
-        colTasks.sort((a, b) => {
-          const aDone = a.effectiveStatus === "done" ? 1 : 0;
-          const bDone = b.effectiveStatus === "done" ? 1 : 0;
-          if (aDone !== bDone) return aDone - bDone;
-          return a.title.localeCompare(b.title);
-        });
-      } else {
-        const barycenter = (t: DerivedTask): number => {
-          const preds = t.dependsOn.filter((dep) => placedY.has(dep.id));
-          if (preds.length === 0) return 999999;
-          return preds.reduce((sum, dep) => sum + (placedY.get(dep.id) ?? 0), 0) / preds.length;
-        };
-        colTasks.sort((a, b) => {
-          const aDone = a.effectiveStatus === "done" ? 1 : 0;
-          const bDone = b.effectiveStatus === "done" ? 1 : 0;
-          if (aDone !== bDone) return aDone - bDone;
-          return barycenter(a) - barycenter(b);
-        });
-      }
-
-      colTasks.forEach((t, i) => {
-        const x = 20 + col * (NODE_W + COL_GAP);
-        const y = yCursor + LANE_HEADER_H + LANE_PAD_TOP + i * (NODE_H + ROW_GAP);
-        positioned.push({ task: t, x, y, col, laneId, ghost: ghostIds.has(t.id) });
-        placedY.set(t.id, y + NODE_H / 2);
+    rowTasks.forEach((t, colIndex) => {
+      const x = rowStartX + colIndex * (NODE_W + COL_GAP);
+      const y = PAD_Y + row * (NODE_H + ROW_GAP);
+      positioned.push({
+        task: t,
+        x,
+        y,
+        row,
+        col: colIndex,
+        ghost: ghostIds.has(t.id),
       });
-    }
-
-    yCursor += laneHeight + 8;
-  };
-
-  for (const area of orderedAreas) {
-    buildLane(area.id, area.name, placedTasks.filter((t) => t.area_id === area.id));
-  }
-  buildLane("__none", "Ohne Bereich", placedTasks.filter((t) => !t.area_id));
-
-  // Backward barycenter pass: pull predecessors towards the average Y of their successors
-  const maxColAll = Math.max(0, ...positioned.map((p) => p.col));
-  for (let iteration = 0; iteration < 3; iteration++) {
-    for (let col = maxColAll - 1; col >= 0; col--) {
-      const lanesInCol = new Set(
-        positioned.filter((p) => p.col === col).map((p) => p.laneId),
-      );
-      for (const laneId of lanesInCol) {
-        const colLaneTasks = positioned.filter(
-          (p) => p.col === col && p.laneId === laneId,
-        );
-        if (colLaneTasks.length === 0) continue;
-
-        const withTargetY = colLaneTasks.map((pos) => {
-          const successors = positioned.filter((p) =>
-            p.task.dependsOn.some((dep) => dep.id === pos.task.id),
-          );
-          const targetY = successors.length > 0
-            ? successors.reduce((sum, s) => sum + s.y + NODE_H / 2, 0) / successors.length
-            : pos.y + NODE_H / 2;
-          return { pos, targetY };
-        });
-
-        withTargetY.sort((a, b) => a.targetY - b.targetY);
-
-        // Keep tasks within the lane's vertical extent
-        const lane = lanes.find((l) => l.id === laneId);
-        const laneTop = lane ? lane.yTop + LANE_HEADER_H + LANE_PAD_TOP : 0;
-        const originalYs = colLaneTasks.map((p) => p.y).sort((a, b) => a - b);
-        const startY = originalYs[0] ?? laneTop;
-
-        withTargetY.forEach(({ pos }, i) => {
-          pos.y = startY + i * (NODE_H + ROW_GAP);
-        });
-      }
-    }
+    });
   }
 
-  const maxCol = maxColAll;
-  const width = 40 + (maxCol + 1) * NODE_W + maxCol * COL_GAP;
-  const height = Math.max(400, yCursor + 24);
-  return { positioned, lanes, width, height };
+  const height = PAD_Y * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP;
+  return { positioned, width: Math.max(totalWidth, 360), height: Math.max(height, 400) };
 }
 
-interface NetworkCanvasProps {
-  connectMode?: boolean;
-  connectSource?: string | null;
-  onConnectTap?: (taskId: string) => void;
-  showDone?: boolean;
-}
-
+// ─── Deadline-Anzeige ──────────────────────────────────────────────────────────
 function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
   if (task.no_deadline || !task.deadline) return null;
   const d = new Date(task.deadline);
@@ -243,7 +191,20 @@ function compactDeadline(task: DerivedTask): { text: string; color: string } | n
   return { text: fmt, color: "#94a3b8" };
 }
 
-export function NetworkCanvas({ connectMode = false, connectSource = null, onConnectTap, showDone = false }: NetworkCanvasProps = {}) {
+// ─── Hauptkomponente ───────────────────────────────────────────────────────────
+interface NetworkCanvasProps {
+  connectMode?: boolean;
+  connectSource?: string | null;
+  onConnectTap?: (taskId: string) => void;
+  showDone?: boolean;
+}
+
+export function NetworkCanvas({
+  connectMode = false,
+  connectSource = null,
+  onConnectTap,
+  showDone = false,
+}: NetworkCanvasProps = {}) {
   const areas = useStore((s) => s.areas);
   const users = useStore((s) => s.users);
   const openDetail = useStore((s) => s.openDetail);
@@ -253,92 +214,119 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
   const filterProjectIds = useStore((s) => s.filterProjectIds);
   const derived = useDerivedTasks();
 
-  const visibleTaskIds = useMemo(() => {
-    return new Set(
-      derived
-        .filter((t) => showDone || t.effectiveStatus !== "done")
-        .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
-        .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
-        .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
-        .map((t) => t.id),
-    );
-  }, [derived, filterAreaIds, filterOwnerIds, filterProjectIds, showDone]);
-
-  const showGhosts = filterAreaIds.length > 0 || filterOwnerIds.length > 0 || filterProjectIds.length > 0;
-
-
-  const { positioned, lanes, width, height } = useMemo(
-    () => computeLayout(derived, areas, visibleTaskIds, showGhosts),
-    [derived, areas, visibleTaskIds, showGhosts],
+  const visibleTaskIds = useMemo(
+    () =>
+      new Set(
+        derived
+          .filter((t) => showDone || t.effectiveStatus !== "done")
+          .filter((t) => filterAreaIds.length === 0 || (t.area_id && filterAreaIds.includes(t.area_id)))
+          .filter((t) => filterOwnerIds.length === 0 || (t.owner_id && filterOwnerIds.includes(t.owner_id)))
+          .filter((t) => filterProjectIds.length === 0 || (t.project_id && filterProjectIds.includes(t.project_id)))
+          .map((t) => t.id),
+      ),
+    [derived, filterAreaIds, filterOwnerIds, filterProjectIds, showDone],
   );
-  const posById = useMemo(() => new Map(positioned.map((p) => [p.task.id, p])), [positioned]);
+
+  const showGhosts =
+    filterAreaIds.length > 0 || filterOwnerIds.length > 0 || filterProjectIds.length > 0;
+
+  const { positioned, width, height } = useMemo(
+    () => computeLayout(derived, visibleTaskIds, showGhosts),
+    [derived, visibleTaskIds, showGhosts],
+  );
+
+  const posById = useMemo(
+    () => new Map(positioned.map((p) => [p.task.id, p])),
+    [positioned],
+  );
   const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const panRef = useRef(pan);
-  useEffect(() => { panRef.current = pan; }, [pan]);
-  const dragRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+  // ── Horizontales Scrollen via Scrollbar unten ──────────────────────────────
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollX, setScrollX] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
 
-  // Node drag (move task to another lane)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    obs.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => obs.disconnect();
+  }, []);
+
+  const onScroll = useCallback(() => {
+    if (scrollContainerRef.current) {
+      setScrollX(scrollContainerRef.current.scrollLeft);
+    }
+  }, []);
+
+  // Scrollbar-Thumb-Breite und Position
+  const scrollbarVisible = width > containerWidth;
+  const thumbWidth = scrollbarVisible
+    ? Math.max(40, (containerWidth / width) * containerWidth)
+    : containerWidth;
+  const thumbLeft = scrollbarVisible
+    ? (scrollX / (width - containerWidth)) * (containerWidth - thumbWidth)
+    : 0;
+
+  const thumbDragRef = useRef<{ startX: number; startScrollX: number } | null>(null);
+
+  const onThumbPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    thumbDragRef.current = {
+      startX: e.clientX,
+      startScrollX: scrollContainerRef.current?.scrollLeft ?? 0,
+    };
+  };
+  const onThumbPointerMove = (e: React.PointerEvent) => {
+    if (!thumbDragRef.current) return;
+    const dx = e.clientX - thumbDragRef.current.startX;
+    const ratio = (width - containerWidth) / (containerWidth - thumbWidth);
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft =
+        thumbDragRef.current.startScrollX + dx * ratio;
+    }
+  };
+  const onThumbPointerUp = () => {
+    thumbDragRef.current = null;
+  };
+
+  // ── Node-Drag (Task in anderen Bereich verschieben) ────────────────────────
   const [nodeDrag, setNodeDrag] = useState<{
     taskId: string;
-    sourceLaneId: string;
-    cx: number; // canvas coords
+    cx: number;
     cy: number;
-    hoverLaneId: string | null;
   } | null>(null);
+
   const nodeDragInit = useRef<{
     taskId: string;
-    sourceLaneId: string;
     startClientX: number;
     startClientY: number;
-    pointerType: string;
-    longPressReady: boolean;
     activated: boolean;
-    longPressTimer: number | null;
     suppressClick: boolean;
+    longPressTimer: number | null;
+    longPressReady: boolean;
   } | null>(null);
 
-  useEffect(() => { setPan({ x: 0, y: 0 }); }, [derived.length]);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("[data-node]")) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { x: e.clientX, y: e.clientY, startX: pan.x, startY: pan.y };
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    setPan({
-      x: dragRef.current.startX + (e.clientX - dragRef.current.x),
-      y: dragRef.current.startY + (e.clientY - dragRef.current.y),
-    });
-  };
-  const onPointerUp = () => { dragRef.current = null; };
-
-  const nodeDragRef = useRef<typeof nodeDrag>(null);
-  useEffect(() => { nodeDragRef.current = nodeDrag; }, [nodeDrag]);
-  const lanesRef = useRef(lanes);
-  useEffect(() => { lanesRef.current = lanes; }, [lanes]);
-
-  const beginNodeDrag = (e: React.PointerEvent, taskId: string, sourceLaneId: string) => {
+  const beginNodeDrag = (e: React.PointerEvent, taskId: string) => {
     if (connectMode) return;
     const s = {
       taskId,
-      sourceLaneId,
       startClientX: e.clientX,
       startClientY: e.clientY,
-      pointerType: e.pointerType,
-      longPressReady: e.pointerType !== "touch",
       activated: false,
-      longPressTimer: null as number | null,
       suppressClick: false,
+      longPressTimer: null as number | null,
+      longPressReady: e.pointerType !== "touch",
     };
     nodeDragInit.current = s;
     if (e.pointerType === "touch") {
-      s.longPressTimer = window.setTimeout(() => { s.longPressReady = true; }, 400);
+      s.longPressTimer = window.setTimeout(() => {
+        s.longPressReady = true;
+      }, 400);
     }
-
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - s.startClientX;
       const dy = ev.clientY - s.startClientY;
@@ -348,41 +336,29 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
         s.activated = true;
         s.suppressClick = true;
       }
-      const rect = containerRef.current?.getBoundingClientRect();
+      const rect = scrollContainerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const cx = ev.clientX - rect.left - panRef.current.x;
-      const cy = ev.clientY - rect.top - panRef.current.y;
-      let hover: string | null = null;
-      for (const l of lanesRef.current) {
-        if (cy >= l.yTop && cy <= l.yTop + l.height) {
-          if (l.id !== s.sourceLaneId && l.id !== "__none") hover = l.id;
-          break;
-        }
-      }
-      setNodeDrag({ taskId: s.taskId, sourceLaneId: s.sourceLaneId, cx, cy, hoverLaneId: hover });
+      setNodeDrag({
+        taskId: s.taskId,
+        cx: ev.clientX - rect.left + (scrollContainerRef.current?.scrollLeft ?? 0),
+        cy: ev.clientY - rect.top + (scrollContainerRef.current?.scrollTop ?? 0),
+      });
     };
-    const onUp = async () => {
-      if (s.longPressTimer) { window.clearTimeout(s.longPressTimer); s.longPressTimer = null; }
+    const onUp = () => {
+      if (s.longPressTimer) window.clearTimeout(s.longPressTimer);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
-      const wasActive = s.activated;
-      const finalDrag = nodeDragRef.current;
       nodeDragInit.current = null;
       setNodeDrag(null);
-      if (wasActive && finalDrag?.hoverLaneId) {
-        const area = areas.find((a) => a.id === finalDrag.hoverLaneId);
-        await updateTask(finalDrag.taskId, { area_id: finalDrag.hoverLaneId });
-        if (area) toast.success(`Task zu ${area.name} verschoben`);
-      }
-      window.setTimeout(() => { s.suppressClick = false; }, 0);
+      window.setTimeout(() => {
+        s.suppressClick = false;
+      }, 0);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
   };
-
-  const wasDraggedRef = () => nodeDragInit.current?.suppressClick === true;
 
   if (derived.length === 0) {
     return (
@@ -392,272 +368,296 @@ export function NetworkCanvas({ connectMode = false, connectSource = null, onCon
     );
   }
 
-  // Build unique gradient defs per owner for "done dep" edges
-  const ownerColorByTaskId = (id: string) => {
-    const t = derived.find((x) => x.id === id);
-    const u = users.find((u) => u.id === t?.owner_id);
-    return ownerStyle(u).main;
-  };
-
   return (
-    <div
-      ref={containerRef}
-      className="h-full w-full touch-none overflow-hidden select-none transition-colors duration-300"
-      style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, width, height }} className="relative">
-        <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
-          <defs>
-            <linearGradient id="cross-grad" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0%" stopColor="#14b8a6" />
-              <stop offset="100%" stopColor="#c084fc" />
-            </linearGradient>
-            <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-              <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa" />
-            </marker>
-            {/* per-owner gradient for done edges */}
-            {users.map((u) => {
-              const c = ownerStyle(u).main;
-              return (
-                <linearGradient key={u.id} id={`done-grad-${u.id}`} x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor={c} stopOpacity={0.7} />
-                  <stop offset="100%" stopColor={c} stopOpacity={0} />
-                </linearGradient>
-              );
-            })}
-          </defs>
+    <div className="flex flex-col h-full" style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}>
+      {/* Scrollbarer Canvas-Bereich – vertikal per normalem Touch-Scroll */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-x-auto overflow-y-auto"
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        {/* Innerer Container in exakter Layout-Größe */}
+        <div style={{ width, height, position: "relative", flexShrink: 0 }}>
+          {/* SVG-Ebene für Pfeile */}
+          <svg
+            width={width}
+            height={height}
+            className="absolute inset-0 pointer-events-none"
+          >
+            <defs>
+              <marker
+                id="arrow-main"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto"
+              >
+                <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa" />
+              </marker>
+              <marker
+                id="arrow-cross"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto"
+              >
+                <path d="M0,1 L9,5 L0,9 z" fill="#6366f1" />
+              </marker>
+              {users.map((u) => {
+                const c = ownerStyle(u).main;
+                return (
+                  <linearGradient
+                    key={u.id}
+                    id={`done-grad-${u.id}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor={c} stopOpacity={0.6} />
+                    <stop offset="100%" stopColor={c} stopOpacity={0.1} />
+                  </linearGradient>
+                );
+              })}
+            </defs>
 
-          {/* Lane backgrounds */}
-          {lanes.map((l) => {
-            const isDrop = nodeDrag?.hoverLaneId === l.id;
+            {/* Pfeile von Vorgänger (oben) zu Nachfolger (unten) */}
+            {positioned.flatMap((p) =>
+              p.task.dependsOn.map((dep) => {
+                const from = posById.get(dep.id);
+                if (!from) return null;
+
+                // Verbindung: Mitte-Unten des Vorgängers → Mitte-Oben des Nachfolgers
+                const x1 = from.x + NODE_W / 2;
+                const y1 = from.y + NODE_H;
+                const x2 = p.x + NODE_W / 2;
+                const y2 = p.y;
+
+                // Kurve: vertikale Bezier
+                const midY = (y1 + y2) / 2;
+                const pathD = `M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`;
+
+                const depDone = dep.status === "done";
+                const crossRow = Math.abs(from.row - p.row) > 1;
+
+                let stroke: string;
+                let strokeWidth: number;
+                let dash: string | undefined;
+
+                if (depDone) {
+                  stroke = `url(#done-grad-${from.task.owner_id ?? ""})`;
+                  strokeWidth = 1.5;
+                  dash = "4 4";
+                } else if (crossRow) {
+                  stroke = "#6366f1";
+                  strokeWidth = 1.5;
+                  dash = "3 5";
+                } else {
+                  stroke = "#a78bfa";
+                  strokeWidth = 2;
+                  dash = undefined;
+                }
+
+                return (
+                  <path
+                    key={`${dep.id}-${p.task.id}`}
+                    d={pathD}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    fill="none"
+                    strokeDasharray={dash}
+                    markerEnd={depDone ? undefined : crossRow ? "url(#arrow-cross)" : "url(#arrow-main)"}
+                  />
+                );
+              }),
+            )}
+          </svg>
+
+          {/* Task-Nodes */}
+          {positioned.map((p) => {
+            const owner = users.find((u) => u.id === p.task.owner_id);
+            const style = ownerStyle(owner);
+            const done = p.task.effectiveStatus === "done";
+            const blocked = p.task.isBlocked;
+            const ghost = p.ghost;
+            const dot = PRIORITY_DOT[p.task.priority];
+            const area = areaById.get(p.task.area_id ?? "");
+            const dl = compactDeadline(p.task);
+
+            const borderColor = ghost
+              ? withAlpha(style.main, 0.4)
+              : done
+              ? withAlpha(style.main, 0.25)
+              : style.main;
+            const opacity = ghost ? 0.3 : done ? 0.4 : 1;
+            const isSource = connectMode && connectSource === p.task.id;
+            const isConnectable = connectMode && !ghost && p.task.id !== connectSource;
+            const boxShadow = isSource
+              ? `0 0 0 2px white, 0 0 20px ${style.main}`
+              : isConnectable
+              ? `0 0 8px ${withAlpha(style.main, 0.4)}`
+              : !done && !blocked && !ghost
+              ? `0 0 10px ${withAlpha(style.main, 0.3)}`
+              : undefined;
+
+            const isDragging = nodeDrag?.taskId === p.task.id;
+
             return (
-              <g key={l.id} style={{ transition: "opacity 0.15s" }}>
-                <rect
-                  x={4}
-                  y={l.yTop}
-                  width={width - 8}
-                  height={l.height}
-                  rx={14}
-                  fill={isDrop ? "rgba(124,58,237,0.08)" : "#0f0228"}
-                  stroke={isDrop ? "rgba(124,58,237,0.4)" : "#1f0a3d"}
-                  strokeWidth={isDrop ? 1.5 : 1}
-                />
-                <text x={18} y={l.yTop + 22} fill="#a78bfa" fontSize="12" fontWeight="700" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
-                  {l.name}
-                </text>
-              </g>
+              <button
+                key={p.task.id}
+                data-node
+                onPointerDown={
+                  ghost || connectMode
+                    ? undefined
+                    : (e) => beginNodeDrag(e, p.task.id)
+                }
+                onClick={
+                  ghost
+                    ? undefined
+                    : (e) => {
+                        if (nodeDragInit.current?.suppressClick) {
+                          e.preventDefault();
+                          return;
+                        }
+                        if (connectMode && onConnectTap) onConnectTap(p.task.id);
+                        else openDetail(p.task.id);
+                      }
+                }
+                disabled={ghost}
+                className="absolute cut-corner text-left transition-transform active:scale-[0.97]"
+                style={{
+                  left: p.x,
+                  top: p.y,
+                  width: NODE_W,
+                  height: NODE_H,
+                  background: done ? "transparent" : style.bg,
+                  border: `${done ? 1 : 1.5}px ${blocked || ghost ? "dashed" : "solid"} ${borderColor}`,
+                  opacity: isDragging ? 0.2 : opacity,
+                  boxShadow,
+                  cursor: ghost ? "default" : connectMode ? "crosshair" : "pointer",
+                  touchAction: "none",
+                }}
+              >
+                {/* Bereichs-Label oben rechts */}
+                {area && (
+                  <span
+                    className="absolute -top-[10px] right-2 rounded-sm px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide"
+                    style={{
+                      color: style.accent,
+                      background: withAlpha(style.main, 0.18),
+                      border: `1px solid ${withAlpha(style.main, 0.3)}`,
+                    }}
+                  >
+                    {area.name}
+                  </span>
+                )}
+
+                <div className="flex h-full flex-col justify-between p-2">
+                  {done ? (
+                    <p className="text-[11px] font-semibold leading-tight line-clamp-3 line-through text-muted-foreground">
+                      {p.task.title}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-1.5">
+                        <span
+                          className="mt-[3px] inline-block h-[9px] w-[9px] shrink-0 rounded-full"
+                          style={{ background: dot }}
+                        />
+                        <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
+                          {p.task.title}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between gap-1 mt-1">
+                        {owner ? (
+                          <span
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                            style={{ background: style.main }}
+                          >
+                            {owner.initials}
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        {dl && (
+                          <span
+                            className="rounded-full px-1.5 py-[1px] text-[10px] font-bold leading-none"
+                            style={{
+                              color: dl.color,
+                              background: withAlpha(dl.color, 0.16),
+                              border: `1px solid ${withAlpha(dl.color, 0.4)}`,
+                            }}
+                          >
+                            {dl.text}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </button>
             );
           })}
 
-          {/* Edges */}
-          {positioned.flatMap((p) =>
-            p.task.dependsOn.map((dep) => {
-              const from = posById.get(dep.id);
-              if (!from) return null;
-              const x1 = from.x + NODE_W;
-              const y1 = from.y + NODE_H / 2;
-              const x2 = p.x;
-              const y2 = p.y + NODE_H / 2;
-              const cx1 = x1 + Math.min(80, (x2 - x1) / 2);
-              const cx2 = x2 - Math.min(80, (x2 - x1) / 2);
-              const pathD = `M ${x1} ${y1} C ${cx1} ${y1} ${cx2} ${y2} ${x2} ${y2}`;
-              const crossLane = from.laneId !== p.laneId;
-              const depDone = dep.status === "done";
-
-              let stroke: string;
-              let strokeWidth: number;
-              let dash: string | undefined;
-              let marker: string | undefined;
-              if (crossLane) {
-                // bereichsübergreifend: dezent
-                stroke = "url(#cross-grad)";
-                strokeWidth = 1.25;
-                dash = "3 5";
-                marker = undefined;
-              } else if (depDone) {
-                stroke = `url(#done-grad-${from.task.owner_id ?? ""})`;
-                strokeWidth = 2;
-                dash = undefined;
-              } else {
-                // innerhalb eines Bereichs: deutlich sichtbar
-                stroke = "#a78bfa";
-                strokeWidth = 2.5;
-                dash = undefined;
-                markerEnd: undefined;
-              }
-
-              return (
-                <path
-                  key={`${dep.id}-${p.task.id}`}
-                  d={pathD}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  fill="none"
-                  strokeDasharray={dash}
-                  markerEnd={marker}
-                />
-              );
-            }),
-          )}
-        </svg>
-
-        {/* Nodes */}
-        {positioned.map((p) => {
-          const owner = users.find((u) => u.id === p.task.owner_id);
-          const style = ownerStyle(owner);
-          const done = p.task.effectiveStatus === "done";
-          const blocked = p.task.isBlocked;
-          const ghost = p.ghost;
-          const dot = PRIORITY_DOT[p.task.priority];
-          const area = areaById.get(p.task.area_id ?? "");
-
-          const borderColor = ghost
-            ? withAlpha(style.main, 0.5)
-            : done ? withAlpha(style.main, 0.3) : style.main;
-          const borderStyle = blocked || ghost ? "dashed" : "solid";
-          const borderWidth = done && !ghost ? 1 : 1.5;
-          const opacity = ghost ? 0.32 : done ? 0.38 : 1;
-          const isSource = connectMode && connectSource === p.task.id;
-          const isConnectable = connectMode && !ghost && p.task.id !== connectSource;
-          const boxShadow = isSource
-            ? `0 0 0 2px white, 0 0 20px ${style.main}`
-            : isConnectable
-            ? `0 0 8px ${withAlpha(style.main, 0.4)}`
-            : !done && !blocked && !ghost
-            ? `0 0 10px ${withAlpha(style.main, 0.35)}`
-            : undefined;
-          const cursor = ghost ? "default" : connectMode ? "crosshair" : "pointer";
-          const dl = compactDeadline(p.task);
-
-          const isDragging = nodeDrag?.taskId === p.task.id;
-          return (
-            <button
-              key={p.task.id}
-              data-node
-              onPointerDown={
-                ghost || connectMode
-                  ? undefined
-                  : (e) => beginNodeDrag(e, p.task.id, p.laneId)
-              }
-              onClick={
-                ghost
-                  ? undefined
-                  : (e) => {
-                      if (wasDraggedRef()) { e.preventDefault(); return; }
-                      if (connectMode && onConnectTap) onConnectTap(p.task.id);
-                      else openDetail(p.task.id);
-                    }
-              }
-              disabled={ghost}
-              className="absolute cut-corner text-left transition-transform active:scale-[0.97]"
-              style={{
-                left: p.x,
-                top: p.y,
-                width: NODE_W,
-                height: NODE_H,
-                background: done ? "transparent" : style.bg,
-                border: `${borderWidth}px ${borderStyle} ${borderColor}`,
-                opacity: isDragging ? 0.25 : opacity,
-                boxShadow,
-                cursor,
-                touchAction: "none",
-              }}
-            >
-              {ghost && area && (
-                <span
-                  className="absolute -top-1 right-1 rounded-sm px-1 text-[9px] font-semibold uppercase"
-                  style={{ color: "#fcd34d", background: "rgba(245,158,11,0.18)" }}
-                >
-                  {area.name}
-                </span>
-              )}
-              <div className="flex h-full flex-col justify-between p-2">
-                {done ? (
-                  <p className="text-[12px] font-semibold leading-tight line-clamp-3 line-through">
+          {/* Drag-Ghost */}
+          {nodeDrag && (() => {
+            const p = posById.get(nodeDrag.taskId);
+            if (!p) return null;
+            const owner = users.find((u) => u.id === p.task.owner_id);
+            const st = ownerStyle(owner);
+            return (
+              <div
+                className="absolute pointer-events-none cut-corner"
+                style={{
+                  left: nodeDrag.cx - NODE_W / 2,
+                  top: nodeDrag.cy - NODE_H / 2,
+                  width: NODE_W,
+                  height: NODE_H,
+                  background: st.bg,
+                  border: `1.5px solid ${st.main}`,
+                  opacity: 0.55,
+                  boxShadow: `0 12px 32px ${withAlpha(st.main, 0.45)}`,
+                  zIndex: 50,
+                }}
+              >
+                <div className="flex h-full items-start p-2">
+                  <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
                     {p.task.title}
                   </p>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-1.5">
-                      <span
-                        className="mt-[3px] inline-block h-[10px] w-[10px] shrink-0 rounded-full"
-                        style={{ background: dot }}
-                      />
-                      <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
-                        {p.task.title}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between gap-1">
-                      {owner ? (
-                        <span
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                          style={{ background: style.main }}
-                        >
-                          {owner.initials}
-                        </span>
-                      ) : <span />}
-                      {dl && (
-                        <span
-                          className="rounded-full px-2 py-[2px] text-[11px] font-bold leading-none tracking-tight"
-                          style={{
-                            color: dl.color,
-                            background: withAlpha(dl.color, 0.16),
-                            border: `1px solid ${withAlpha(dl.color, 0.45)}`,
-                          }}
-                        >
-                          {dl.text}
-                        </span>
-                      )}
-                      {area && (
-                        <span
-                          className="text-[9px] uppercase tracking-wide shrink-0 overflow-hidden text-ellipsis"
-                          style={{ color: style.accent, maxWidth: 60 }}
-                        >
-                          {area.name}
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
+                </div>
               </div>
-            </button>
-          );
-        })}
-
-        {/* Drag ghost */}
-        {nodeDrag && (() => {
-          const p = posById.get(nodeDrag.taskId);
-          if (!p) return null;
-          const owner = users.find((u) => u.id === p.task.owner_id);
-          const st = ownerStyle(owner);
-          return (
-            <div
-              className="absolute pointer-events-none cut-corner"
-              style={{
-                left: nodeDrag.cx - NODE_W / 2,
-                top: nodeDrag.cy - NODE_H / 2,
-                width: NODE_W,
-                height: NODE_H,
-                background: st.bg,
-                border: `1.5px solid ${st.main}`,
-                opacity: 0.6,
-                boxShadow: `0 12px 32px ${withAlpha(st.main, 0.5)}`,
-                zIndex: 50,
-              }}
-            >
-              <div className="flex h-full items-start p-2">
-                <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">
-                  {p.task.title}
-                </p>
-              </div>
-            </div>
-          );
-        })()}
+            );
+          })()}
+        </div>
       </div>
+
+      {/* Horizontale Scrollbar ganz unten */}
+      {scrollbarVisible && (
+        <div
+          className="relative mx-4 my-2 rounded-full"
+          style={{ height: 4, background: "rgba(167,139,250,0.12)" }}
+        >
+          <div
+            className="absolute top-0 rounded-full cursor-grab active:cursor-grabbing"
+            style={{
+              left: thumbLeft,
+              width: thumbWidth,
+              height: 4,
+              background: "rgba(167,139,250,0.55)",
+              touchAction: "none",
+            }}
+            onPointerDown={onThumbPointerDown}
+            onPointerMove={onThumbPointerMove}
+            onPointerUp={onThumbPointerUp}
+            onPointerCancel={onThumbPointerUp}
+          />
+        </div>
+      )}
     </div>
   );
 }
