@@ -10,7 +10,7 @@ const NODE_H = 84;
 const COL_GAP = 28;
 const ROW_GAP = 60;
 const PAD_X = 20;
-const PAD_Y = 48; // FIX: Platz für Bereichs-Labels oben
+const PAD_Y = 48;
 
 interface Positioned {
   task: DerivedTask;
@@ -22,33 +22,29 @@ interface Positioned {
 }
 
 // ─── Crossing-Reduction: paarweise Swaps ──────────────────────────────────────
-function countCrossingsBetweenRows(
+function countCrossings(
   rowA: DerivedTask[],
   rowB: DerivedTask[],
   colByTask: Map<string, number>,
   placedIds: Set<string>,
 ): number {
-  let crossings = 0;
+  let c = 0;
   for (let i = 0; i < rowB.length; i++) {
-    const tB = rowB[i];
-    const colB = colByTask.get(tB.id) ?? i;
-    for (const dep of tB.dependsOn.filter((d) => placedIds.has(d.id))) {
+    const colBi = colByTask.get(rowB[i].id) ?? i;
+    for (const dep of rowB[i].dependsOn.filter((d) => placedIds.has(d.id))) {
       const colA = colByTask.get(dep.id);
       if (colA === undefined) continue;
       for (let j = i + 1; j < rowB.length; j++) {
-        const tB2 = rowB[j];
-        const colB2 = colByTask.get(tB2.id) ?? j;
-        for (const dep2 of tB2.dependsOn.filter((d) => placedIds.has(d.id))) {
+        const colBj = colByTask.get(rowB[j].id) ?? j;
+        for (const dep2 of rowB[j].dependsOn.filter((d) => placedIds.has(d.id))) {
           const colA2 = colByTask.get(dep2.id);
           if (colA2 === undefined) continue;
-          if ((colA < colA2 && colB > colB2) || (colA > colA2 && colB < colB2)) {
-            crossings++;
-          }
+          if ((colA < colA2 && colBi > colBj) || (colA > colA2 && colBi < colBj)) c++;
         }
       }
     }
   }
-  return crossings;
+  return c;
 }
 
 function swapReduce(
@@ -58,32 +54,25 @@ function swapReduce(
   placedIds: Set<string>,
   maxRow: number,
 ) {
-  const rowTasks = byRow[row];
-  if (rowTasks.length < 2) return;
+  const rt = byRow[row];
+  if (rt.length < 2) return;
   let improved = true;
-  let iterations = 0;
-  while (improved && iterations++ < 20) {
+  let iter = 0;
+  while (improved && iter++ < 15) {
     improved = false;
-    for (let i = 0; i < rowTasks.length - 1; i++) {
-      const tA = rowTasks[i];
-      const tB = rowTasks[i + 1];
+    for (let i = 0; i < rt.length - 1; i++) {
+      const tA = rt[i], tB = rt[i + 1];
       const before =
-        (row > 0 ? countCrossingsBetweenRows(byRow[row - 1], rowTasks, colByTask, placedIds) : 0) +
-        (row < maxRow ? countCrossingsBetweenRows(rowTasks, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
-      // Tausch
-      colByTask.set(tA.id, i + 1);
-      colByTask.set(tB.id, i);
-      rowTasks[i] = tB;
-      rowTasks[i + 1] = tA;
+        (row > 0 ? countCrossings(byRow[row - 1], rt, colByTask, placedIds) : 0) +
+        (row < maxRow ? countCrossings(rt, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
+      colByTask.set(tA.id, i + 1); colByTask.set(tB.id, i);
+      rt[i] = tB; rt[i + 1] = tA;
       const after =
-        (row > 0 ? countCrossingsBetweenRows(byRow[row - 1], rowTasks, colByTask, placedIds) : 0) +
-        (row < maxRow ? countCrossingsBetweenRows(rowTasks, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
+        (row > 0 ? countCrossings(byRow[row - 1], rt, colByTask, placedIds) : 0) +
+        (row < maxRow ? countCrossings(rt, byRow[row + 1] ?? [], colByTask, placedIds) : 0);
       if (after >= before) {
-        // Rücktauschen
-        colByTask.set(tA.id, i);
-        colByTask.set(tB.id, i + 1);
-        rowTasks[i] = tA;
-        rowTasks[i + 1] = tB;
+        colByTask.set(tA.id, i); colByTask.set(tB.id, i + 1);
+        rt[i] = tA; rt[i + 1] = tB;
       } else {
         improved = true;
       }
@@ -91,45 +80,12 @@ function swapReduce(
   }
 }
 
-// ─── Chain-Detection: zusammenhängende Teilgraphen finden ────────────────────
-function findConnectedChains(tasks: DerivedTask[], placedIds: Set<string>): string[][] {
-  const adjList = new Map<string, Set<string>>();
-  for (const t of tasks) {
-    if (!adjList.has(t.id)) adjList.set(t.id, new Set());
-    for (const dep of t.dependsOn) {
-      if (!placedIds.has(dep.id)) continue;
-      adjList.get(t.id)!.add(dep.id);
-      if (!adjList.has(dep.id)) adjList.set(dep.id, new Set());
-      adjList.get(dep.id)!.add(t.id);
-    }
-  }
-  const visited = new Set<string>();
-  const chains: string[][] = [];
-  for (const t of tasks) {
-    if (visited.has(t.id)) continue;
-    const chain: string[] = [];
-    const queue = [t.id];
-    while (queue.length) {
-      const id = queue.shift()!;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      chain.push(id);
-      for (const nb of adjList.get(id) ?? []) {
-        if (!visited.has(nb)) queue.push(nb);
-      }
-    }
-    chains.push(chain);
-  }
-  return chains;
-}
-
-// ─── Haupt-Layout-Funktion ────────────────────────────────────────────────────
+// ─── Layout ───────────────────────────────────────────────────────────────────
 function computeLayout(
   tasks: DerivedTask[],
   visibleTaskIds: Set<string>,
   showGhosts: boolean,
 ) {
-  // Ghost-Nodes
   const ghostIds = new Set<string>();
   if (showGhosts) {
     for (const t of tasks) {
@@ -143,14 +99,39 @@ function computeLayout(
   const placedTasks = tasks.filter((t) => placedIds.has(t.id));
   if (placedTasks.length === 0) return { positioned: [], width: 400, height: 400 };
 
-  // ── SCHRITT 1: ROW via Longest-Path ───────────────────────────────────────
+  // Nachfolger-Map aufbauen
+  const successorsByTask = new Map<string, string[]>();
+  for (const t of placedTasks)
+    for (const dep of t.dependsOn) {
+      if (!placedIds.has(dep.id)) continue;
+      if (!successorsByTask.has(dep.id)) successorsByTask.set(dep.id, []);
+      successorsByTask.get(dep.id)!.push(t.id);
+    }
+
+  // ── SCHRITT 1: Tasks kategorisieren ────────────────────────────────────────
+  // "Isoliert" = keine Vorgänger UND keine Nachfolger → stapeln untereinander
+  // "Vernetzt" = hat mindestens eine Verbindung → normales Layout
+  const isolatedTasks: DerivedTask[] = [];
+  const connectedTasks: DerivedTask[] = [];
+
+  for (const t of placedTasks) {
+    const hasPreds = t.dependsOn.some((d) => placedIds.has(d.id));
+    const hasSuccs = (successorsByTask.get(t.id) ?? []).length > 0;
+    if (!hasPreds && !hasSuccs) {
+      isolatedTasks.push(t);
+    } else {
+      connectedTasks.push(t);
+    }
+  }
+
+  // ── SCHRITT 2: ROW für vernetzte Tasks via Longest-Path ───────────────────
   const rowByTask = new Map<string, number>();
-  const remaining = new Set(placedTasks.map((t) => t.id));
+  const remaining = new Set(connectedTasks.map((t) => t.id));
   let safe = 0;
   while (remaining.size > 0 && safe++ < 5000) {
     let progressed = false;
     for (const id of Array.from(remaining)) {
-      const t = placedTasks.find((x) => x.id === id)!;
+      const t = connectedTasks.find((x) => x.id === id)!;
       const predRows = t.dependsOn
         .filter((d) => placedIds.has(d.id))
         .map((d) => rowByTask.get(d.id));
@@ -166,92 +147,63 @@ function computeLayout(
   // Done-Tasks ans Ende
   const maxActiveRow = Math.max(
     0,
-    ...placedTasks.filter((t) => t.effectiveStatus !== "done").map((t) => rowByTask.get(t.id) ?? 0),
+    ...connectedTasks.filter((t) => t.effectiveStatus !== "done").map((t) => rowByTask.get(t.id) ?? 0),
   );
-  for (const t of placedTasks) {
+  for (const t of connectedTasks) {
     if (t.effectiveStatus === "done")
       rowByTask.set(t.id, Math.max(rowByTask.get(t.id) ?? 0, maxActiveRow + 1));
   }
 
-  // ── SCHRITT 2: Chains finden und Col-Offsets zuweisen ─────────────────────
-  // Chains die keine gemeinsamen Nodes teilen, können in separaten Col-Gruppen
-  // nebeneinander gestapelt werden → reduziert Breite erheblich
-  const chains = findConnectedChains(placedTasks, placedIds);
-  
-  // Sortiere Chains nach Größe (größte zuerst) für kompakteres Layout
-  chains.sort((a, b) => b.length - a.length);
-  
-  // Für jeden Task: welche Chain gehört er?
-  const chainByTask = new Map<string, number>();
-  chains.forEach((chain, ci) => chain.forEach((id) => chainByTask.set(id, ci)));
-
-  // ── SCHRITT 3: COL via Barycenter + Crossing-Reduction ────────────────────
-  const maxRow = Math.max(...Array.from(rowByTask.values()));
-  const byRow: DerivedTask[][] = Array.from({ length: maxRow + 1 }, () => []);
-  for (const t of placedTasks) byRow[rowByTask.get(t.id) ?? 0].push(t);
+  // ── SCHRITT 3: COL via Barycenter + Crossing-Reduction ───────────────────
+  const maxConnectedRow = connectedTasks.length > 0 ? Math.max(...Array.from(rowByTask.values())) : 0;
+  const byRow: DerivedTask[][] = Array.from({ length: maxConnectedRow + 1 }, () => []);
+  for (const t of connectedTasks) byRow[rowByTask.get(t.id) ?? 0].push(t);
 
   const colByTask = new Map<string, number>();
 
-  // Init: nach Chain-Index dann alphabetisch, so dass Chains zusammenbleiben
+  // Init alphabetisch
   for (const rowTasks of byRow) {
-    rowTasks.sort((a, b) => {
-      const ca = chainByTask.get(a.id) ?? 0;
-      const cb = chainByTask.get(b.id) ?? 0;
-      if (ca !== cb) return ca - cb;
-      return a.title.localeCompare(b.title);
-    });
+    rowTasks.sort((a, b) => a.title.localeCompare(b.title));
     rowTasks.forEach((t, i) => colByTask.set(t.id, i));
   }
 
-  const successorsByTask = new Map<string, string[]>();
-  for (const t of placedTasks)
-    for (const dep of t.dependsOn) {
-      if (!successorsByTask.has(dep.id)) successorsByTask.set(dep.id, []);
-      successorsByTask.get(dep.id)!.push(t.id);
-    }
-
-  // 3 Barycenter-Passes (vor+rück) + Crossing-Reduction nach jedem Pass
+  // 3 Barycenter-Passes + Crossing-Reduction
   for (let pass = 0; pass < 3; pass++) {
-    // Vorwärts: Nachfolger orientieren sich an Vorgängern
-    for (let row = 1; row <= maxRow; row++) {
-      const rowTasks = byRow[row];
-      if (!rowTasks.length) continue;
-      const sorted = rowTasks.map((t) => {
+    for (let row = 1; row <= maxConnectedRow; row++) {
+      const rt = byRow[row]; if (!rt.length) continue;
+      const sorted = rt.map((t) => {
         const preds = t.dependsOn.filter((d) => placedIds.has(d.id));
-        return {
-          t,
-          bary: preds.length
-            ? preds.reduce((s, d) => s + (colByTask.get(d.id) ?? 0), 0) / preds.length
-            : colByTask.get(t.id) ?? 0,
-        };
+        return { t, bary: preds.length ? preds.reduce((s, d) => s + (colByTask.get(d.id) ?? 0), 0) / preds.length : colByTask.get(t.id) ?? 0 };
       }).sort((a, b) => a.bary - b.bary);
       sorted.forEach(({ t }, i) => { colByTask.set(t.id, i); byRow[row][i] = t; });
-      swapReduce(row, byRow, colByTask, placedIds, maxRow);
+      swapReduce(row, byRow, colByTask, placedIds, maxConnectedRow);
     }
-    // Rückwärts: Vorgänger orientieren sich an Nachfolgern
-    for (let row = maxRow - 1; row >= 0; row--) {
-      const rowTasks = byRow[row];
-      if (!rowTasks.length) continue;
-      const sorted = rowTasks.map((t) => {
+    for (let row = maxConnectedRow - 1; row >= 0; row--) {
+      const rt = byRow[row]; if (!rt.length) continue;
+      const sorted = rt.map((t) => {
         const succs = (successorsByTask.get(t.id) ?? []).filter((id) => placedIds.has(id));
-        return {
-          t,
-          bary: succs.length
-            ? succs.reduce((s, id) => s + (colByTask.get(id) ?? 0), 0) / succs.length
-            : colByTask.get(t.id) ?? 0,
-        };
+        return { t, bary: succs.length ? succs.reduce((s, id) => s + (colByTask.get(id) ?? 0), 0) / succs.length : colByTask.get(t.id) ?? 0 };
       }).sort((a, b) => a.bary - b.bary);
       sorted.forEach(({ t }, i) => { colByTask.set(t.id, i); byRow[row][i] = t; });
-      swapReduce(row, byRow, colByTask, placedIds, maxRow);
+      swapReduce(row, byRow, colByTask, placedIds, maxConnectedRow);
     }
   }
 
-  // ── SCHRITT 4: Pixel-Koordinaten (linksbündig) ────────────────────────────
-  const maxCols = Math.max(...byRow.map((r) => r.length), 1);
-  const totalWidth = PAD_X * 2 + maxCols * NODE_W + (maxCols - 1) * COL_GAP;
+  // ── SCHRITT 4: Pixel-Koordinaten ──────────────────────────────────────────
+  const maxConnectedCols = Math.max(...byRow.map((r) => r.length), 1);
+  const connectedWidth = maxConnectedCols * NODE_W + (maxConnectedCols - 1) * COL_GAP;
+
+  // Isolierte Tasks: untereinander in einer Spalte RECHTS neben dem vernetzten Bereich
+  // (mit etwas extra Abstand)
+  const ISOLATED_COL_OFFSET = connectedWidth + COL_GAP * 3;
+  const hasIsolated = isolatedTasks.length > 0;
+
+  const totalWidth = PAD_X * 2 + connectedWidth + (hasIsolated ? COL_GAP * 3 + NODE_W : 0);
+
   const positioned: Positioned[] = [];
 
-  for (let row = 0; row <= maxRow; row++) {
+  // Vernetzte Tasks
+  for (let row = 0; row <= maxConnectedRow; row++) {
     const rowTasks = byRow[row];
     if (!rowTasks.length) continue;
     rowTasks.sort((a, b) => (colByTask.get(a.id) ?? 0) - (colByTask.get(b.id) ?? 0));
@@ -267,14 +219,40 @@ function computeLayout(
     });
   }
 
+  // Isolierte Tasks: untereinander gestapelt in eigener Spalte
+  // Done-Tasks unter aktive
+  isolatedTasks.sort((a, b) => {
+    const aDone = a.effectiveStatus === "done" ? 1 : 0;
+    const bDone = b.effectiveStatus === "done" ? 1 : 0;
+    if (aDone !== bDone) return aDone - bDone;
+    return a.title.localeCompare(b.title);
+  });
+
+  isolatedTasks.forEach((t, i) => {
+    positioned.push({
+      task: t,
+      x: PAD_X + ISOLATED_COL_OFFSET,
+      y: PAD_Y + i * (NODE_H + ROW_GAP),
+      row: i, // für Pfeil-Referenz (diese Tasks haben keine Pfeile)
+      col: maxConnectedCols + 2,
+      ghost: ghostIds.has(t.id),
+    });
+  });
+
+  const totalHeight = Math.max(
+    PAD_Y * 2 + (maxConnectedRow + 1) * NODE_H + maxConnectedRow * ROW_GAP,
+    PAD_Y * 2 + isolatedTasks.length * NODE_H + (isolatedTasks.length - 1) * ROW_GAP,
+    400,
+  );
+
   return {
     positioned,
     width: Math.max(totalWidth, 360),
-    height: Math.max(PAD_Y * 2 + (maxRow + 1) * NODE_H + maxRow * ROW_GAP, 400),
+    height: totalHeight,
   };
 }
 
-// ─── Deadline-Anzeige ─────────────────────────────────────────────────────────
+// ─── Deadline ─────────────────────────────────────────────────────────────────
 function compactDeadline(task: DerivedTask): { text: string; color: string } | null {
   if (task.no_deadline || !task.deadline) return null;
   const d = new Date(task.deadline);
@@ -295,7 +273,7 @@ interface NetworkCanvasProps {
   onScrollInfo?: (info: { scrollX: number; containerWidth: number; contentWidth: number }) => void;
 }
 
-// ─── Hauptkomponente ──────────────────────────────────────────────────────────
+// ─── Komponente ───────────────────────────────────────────────────────────────
 export function NetworkCanvas({
   connectMode = false,
   connectSource = null,
@@ -334,13 +312,13 @@ export function NetworkCanvas({
   const posById = useMemo(() => new Map(positioned.map((p) => [p.task.id, p])), [positioned]);
   const areaById = useMemo(() => new Map(areas.map((a) => [a.id, a])), [areas]);
 
-  // ── Scroll-Container ──────────────────────────────────────────────────────
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // ── Scroll ────────────────────────────────────────────────────────────────
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollX, setScrollX] = useState(0);
   const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
-    const el = scrollContainerRef.current;
+    const el = scrollRef.current;
     if (!el) return;
     const obs = new ResizeObserver(() => {
       setContainerWidth(el.clientWidth);
@@ -352,31 +330,30 @@ export function NetworkCanvas({
   }, [width, onScrollInfo]);
 
   const onScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
+    const el = scrollRef.current;
     if (!el) return;
     setScrollX(el.scrollLeft);
     onScrollInfo?.({ scrollX: el.scrollLeft, containerWidth: el.clientWidth, contentWidth: width });
   }, [width, onScrollInfo]);
 
-  // ── Scrollbar-Thumb ───────────────────────────────────────────────────────
+  // ── Scrollbar ─────────────────────────────────────────────────────────────
   const scrollbarVisible = width > containerWidth;
   const thumbWidth = scrollbarVisible ? Math.max(40, (containerWidth / width) * containerWidth) : containerWidth;
   const thumbLeft = scrollbarVisible ? (scrollX / (width - containerWidth)) * (containerWidth - thumbWidth) : 0;
-  const thumbDragRef = useRef<{ startX: number; startScrollX: number } | null>(null);
+  const thumbDrag = useRef<{ startX: number; startScrollX: number } | null>(null);
 
-  const onThumbPointerDown = (e: React.PointerEvent) => {
+  const onThumbDown = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    thumbDragRef.current = { startX: e.clientX, startScrollX: scrollContainerRef.current?.scrollLeft ?? 0 };
+    thumbDrag.current = { startX: e.clientX, startScrollX: scrollRef.current?.scrollLeft ?? 0 };
   };
-  const onThumbPointerMove = (e: React.PointerEvent) => {
-    if (!thumbDragRef.current) return;
-    const dx = e.clientX - thumbDragRef.current.startX;
+  const onThumbMove = (e: React.PointerEvent) => {
+    if (!thumbDrag.current || !scrollRef.current) return;
+    const dx = e.clientX - thumbDrag.current.startX;
     const ratio = (width - containerWidth) / (containerWidth - thumbWidth);
-    if (scrollContainerRef.current)
-      scrollContainerRef.current.scrollLeft = thumbDragRef.current.startScrollX + dx * ratio;
+    scrollRef.current.scrollLeft = thumbDrag.current.startScrollX + dx * ratio;
   };
-  const onThumbPointerUp = () => { thumbDragRef.current = null; };
+  const onThumbUp = () => { thumbDrag.current = null; };
 
   // ── Node-Drag ─────────────────────────────────────────────────────────────
   const [nodeDrag, setNodeDrag] = useState<{ taskId: string; cx: number; cy: number } | null>(null);
@@ -397,30 +374,22 @@ export function NetworkCanvas({
     nodeDragInit.current = s;
     if (e.pointerType === "touch")
       s.longPressTimer = window.setTimeout(() => { s.longPressReady = true; }, 400);
-
     const onMove = (ev: PointerEvent) => {
-      const dx = ev.clientX - s.startClientX;
-      const dy = ev.clientY - s.startClientY;
+      const dx = ev.clientX - s.startClientX, dy = ev.clientY - s.startClientY;
       if (!s.activated) {
-        if (!s.longPressReady) return;
-        if (dx * dx + dy * dy < 64) return;
+        if (!s.longPressReady || dx * dx + dy * dy < 64) return;
         s.activated = true; s.suppressClick = true;
       }
-      const rect = scrollContainerRef.current?.getBoundingClientRect();
+      const rect = scrollRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setNodeDrag({
-        taskId: s.taskId,
-        cx: ev.clientX - rect.left + (scrollContainerRef.current?.scrollLeft ?? 0),
-        cy: ev.clientY - rect.top + (scrollContainerRef.current?.scrollTop ?? 0),
-      });
+      setNodeDrag({ taskId: s.taskId, cx: ev.clientX - rect.left + (scrollRef.current?.scrollLeft ?? 0), cy: ev.clientY - rect.top + (scrollRef.current?.scrollTop ?? 0) });
     };
     const onUp = () => {
       if (s.longPressTimer) window.clearTimeout(s.longPressTimer);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
-      nodeDragInit.current = null;
-      setNodeDrag(null);
+      nodeDragInit.current = null; setNodeDrag(null);
       window.setTimeout(() => { s.suppressClick = false; }, 0);
     };
     window.addEventListener("pointermove", onMove);
@@ -438,15 +407,10 @@ export function NetworkCanvas({
 
   return (
     <div className="flex flex-col h-full" style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}>
-      {/* Canvas – vertikal scrollbar per normalem Touch, horizontal per Scrollbar */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={onScroll}
-        className="flex-1 overflow-x-auto overflow-y-auto"
-        style={{ WebkitOverflowScrolling: "touch" }}
-      >
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-x-auto overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
         <div style={{ width, height, position: "relative", flexShrink: 0 }}>
-          {/* SVG-Pfeile */}
+
+          {/* SVG Pfeile */}
           <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
             <defs>
               <marker id="arrow-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
@@ -465,15 +429,12 @@ export function NetworkCanvas({
                 );
               })}
             </defs>
-
             {positioned.flatMap((p) =>
               p.task.dependsOn.map((dep) => {
                 const from = posById.get(dep.id);
                 if (!from) return null;
-                const x1 = from.x + NODE_W / 2;
-                const y1 = from.y + NODE_H;
-                const x2 = p.x + NODE_W / 2;
-                const y2 = p.y;
+                const x1 = from.x + NODE_W / 2, y1 = from.y + NODE_H;
+                const x2 = p.x + NODE_W / 2, y2 = p.y;
                 const midY = (y1 + y2) / 2;
                 const depDone = dep.status === "done";
                 const crossRow = Math.abs(from.row - p.row) > 1;
@@ -492,7 +453,7 @@ export function NetworkCanvas({
             )}
           </svg>
 
-          {/* Task-Nodes */}
+          {/* Task Nodes */}
           {positioned.map((p) => {
             const owner = users.find((u) => u.id === p.task.owner_id);
             const style = ownerStyle(owner);
@@ -526,32 +487,21 @@ export function NetworkCanvas({
                 style={{
                   left: p.x, top: p.y, width: NODE_W, height: NODE_H,
                   background: done ? "transparent" : style.bg,
-                  border: `${done ? 1 : 1.5}px ${blocked || ghost ? "dashed" : "solid"} ${
-                    ghost ? withAlpha(style.main, 0.4) : done ? withAlpha(style.main, 0.25) : style.main
-                  }`,
+                  border: `${done ? 1 : 1.5}px ${blocked || ghost ? "dashed" : "solid"} ${ghost ? withAlpha(style.main, 0.4) : done ? withAlpha(style.main, 0.25) : style.main}`,
                   opacity: isDragging ? 0.2 : ghost ? 0.3 : done ? 0.4 : 1,
-                  boxShadow,
-                  cursor: ghost ? "default" : connectMode ? "crosshair" : "pointer",
+                  boxShadow, cursor: ghost ? "default" : connectMode ? "crosshair" : "pointer",
                   touchAction: "none",
                 }}
               >
                 {area && (
-                  <span
-                    className="absolute -top-[10px] right-2 rounded-sm px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide"
-                    style={{
-                      color: style.accent,
-                      background: withAlpha(style.main, 0.18),
-                      border: `1px solid ${withAlpha(style.main, 0.3)}`,
-                    }}
-                  >
+                  <span className="absolute -top-[10px] right-2 rounded-sm px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide"
+                    style={{ color: style.accent, background: withAlpha(style.main, 0.18), border: `1px solid ${withAlpha(style.main, 0.3)}` }}>
                     {area.name}
                   </span>
                 )}
                 <div className="flex h-full flex-col justify-between p-2">
                   {done ? (
-                    <p className="text-[11px] font-semibold leading-tight line-clamp-3 line-through text-muted-foreground">
-                      {p.task.title}
-                    </p>
+                    <p className="text-[11px] font-semibold leading-tight line-clamp-3 line-through text-muted-foreground">{p.task.title}</p>
                   ) : (
                     <>
                       <div className="flex items-start gap-1.5">
@@ -578,7 +528,7 @@ export function NetworkCanvas({
             );
           })}
 
-          {/* Drag-Ghost */}
+          {/* Drag Ghost */}
           {nodeDrag && (() => {
             const p = posById.get(nodeDrag.taskId);
             if (!p) return null;
@@ -586,13 +536,7 @@ export function NetworkCanvas({
             const st = ownerStyle(owner);
             return (
               <div className="absolute pointer-events-none cut-corner"
-                style={{
-                  left: nodeDrag.cx - NODE_W / 2, top: nodeDrag.cy - NODE_H / 2,
-                  width: NODE_W, height: NODE_H, background: st.bg,
-                  border: `1.5px solid ${st.main}`, opacity: 0.55,
-                  boxShadow: `0 12px 32px ${withAlpha(st.main, 0.45)}`, zIndex: 50,
-                }}
-              >
+                style={{ left: nodeDrag.cx - NODE_W / 2, top: nodeDrag.cy - NODE_H / 2, width: NODE_W, height: NODE_H, background: st.bg, border: `1.5px solid ${st.main}`, opacity: 0.55, boxShadow: `0 12px 32px ${withAlpha(st.main, 0.45)}`, zIndex: 50 }}>
                 <div className="flex h-full items-start p-2">
                   <p className="text-[12px] font-semibold leading-tight line-clamp-2 text-foreground">{p.task.title}</p>
                 </div>
@@ -602,17 +546,16 @@ export function NetworkCanvas({
         </div>
       </div>
 
-      {/* Horizontale Scrollbar – immer sichtbar wenn nötig */}
+      {/* Scrollbar */}
       {scrollbarVisible && (
-        <div className="relative mx-4 my-2 rounded-full flex-shrink-0"
-          style={{ height: 4, background: "rgba(167,139,250,0.12)" }}>
+        <div className="relative mx-4 my-2 rounded-full flex-shrink-0" style={{ height: 4, background: "rgba(167,139,250,0.12)" }}>
           <div
             className="absolute top-0 rounded-full cursor-grab active:cursor-grabbing"
             style={{ left: thumbLeft, width: thumbWidth, height: 4, background: "rgba(167,139,250,0.55)", touchAction: "none" }}
-            onPointerDown={onThumbPointerDown}
-            onPointerMove={onThumbPointerMove}
-            onPointerUp={onThumbPointerUp}
-            onPointerCancel={onThumbPointerUp}
+            onPointerDown={onThumbDown}
+            onPointerMove={onThumbMove}
+            onPointerUp={onThumbUp}
+            onPointerCancel={onThumbUp}
           />
         </div>
       )}
