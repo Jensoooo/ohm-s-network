@@ -3,18 +3,41 @@ import type { DerivedTask } from "./types"
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface TaskWithGraph extends DerivedTask {
-  upstream: Set<string>   // alle Task-IDs die diesen Task transitiv blockieren
-  downstream: Set<string> // alle Task-IDs die dieser Task transitiv blockiert
+  upstream: Set<string>
+  downstream: Set<string>
   urgencyScore: number
-  isMergeRef?: boolean        // Schritt 4: Task kommt in mehreren Ketten vor, Verlierer-Kette
-  mergeIntoChainId?: string   // Schritt 4: ID der Gewinner-Kette
 }
 
 export interface NetzplanChain {
   id: string
   tasks: TaskWithGraph[]
-  headScore: number // urgencyScore des ersten Tasks der Kette
+  headScore: number
 }
+
+// Einfache Kette ohne Merge
+export interface SimpleNetzplanItem {
+  type: 'simple'
+  id: string
+  tasks: TaskWithGraph[]
+  headScore: number
+}
+
+// Ein Eingangspfad vor dem Merge-Punkt
+export interface MergedNetzplanPath {
+  tasks: TaskWithGraph[]
+  headScore: number
+}
+
+// Zusammengeführte Kette: mehrere Pfade → ein gemeinsamer Schwanz
+export interface MergedNetzplanItem {
+  type: 'merged'
+  id: string
+  paths: MergedNetzplanPath[]   // sortiert desc nach headScore; höchster = oben
+  sharedTail: TaskWithGraph[]   // Merge-Task + alle folgenden Tasks
+  combinedScore: number         // Durchschnitt der path.headScores (für Sortierung)
+}
+
+export type NetzplanItem = SimpleNetzplanItem | MergedNetzplanItem
 
 // ── Schritt 1: Transitiven Graphen aufbauen ───────────────────────────────────
 // BFS statt Rekursion um Stack Overflow bei tiefen Graphen zu vermeiden
@@ -162,12 +185,17 @@ export function buildChains(taskMap: Map<string, TaskWithGraph>): NetzplanChain[
   return allChains
 }
 
-// ── Schritt 4: Merge-Tasks auflösen ──────────────────────────────────────────
+// ── Schritt 4: Ketten zu NetzplanItems zusammenführen ────────────────────────
+// Tasks die in mehreren Ketten vorkommen = Merge-Punkt.
+// Alle betroffenen Ketten werden zu einem MergedNetzplanItem zusammengefasst:
+// Eingangspfade gestapelt (höchster Score oben) → gemeinsamer Schwanz.
 
-export function resolveMergeTasks(chains: NetzplanChain[]): NetzplanChain[] {
+export function buildNetzplanItems(chains: NetzplanChain[]): NetzplanItem[] {
+  if (chains.length === 0) return []
+
   const chainById = new Map(chains.map((c) => [c.id, c]))
 
-  // task → alle Chain-IDs die ihn enthalten
+  // task → IDs aller Ketten die diesen Task enthalten
   const taskToChainIds = new Map<string, Set<string>>()
   for (const chain of chains) {
     for (const task of chain.tasks) {
@@ -176,30 +204,82 @@ export function resolveMergeTasks(chains: NetzplanChain[]): NetzplanChain[] {
     }
   }
 
-  for (const [taskId, chainIdSet] of taskToChainIds) {
-    if (chainIdSet.size < 2) continue
+  // IDs aller Tasks die in 2+ Ketten vorkommen (= Merge-Punkte)
+  const mergeTaskIdSet = new Set<string>(
+    [...taskToChainIds.entries()]
+      .filter(([, s]) => s.size >= 2)
+      .map(([id]) => id),
+  )
 
-    // Re-check: welche Ketten enthalten diesen Task noch (manche wurden bereits truncated)
-    const active = [...chainIdSet]
-      .map((id) => chainById.get(id)!)
-      .filter((c) => c.tasks.some((t) => t.id === taskId))
+  const processedChainIds = new Set<string>()
+  const handledMergeTaskIds = new Set<string>()
+  const items: NetzplanItem[] = []
 
-    if (active.length < 2) continue
+  for (const chain of chains) {
+    if (processedChainIds.has(chain.id)) continue
 
-    // Gewinner = höchster headScore (Gleichstand: erster gewinnt)
-    const winner = active.reduce((best, c) => (c.headScore > best.headScore ? c : best))
+    // Ersten Merge-Task in dieser Kette suchen
+    const firstMergeIdx = chain.tasks.findIndex((t) => mergeTaskIdSet.has(t.id))
 
-    for (const loser of active) {
-      if (loser.id === winner.id) continue
-      const idx = loser.tasks.findIndex((t) => t.id === taskId)
-      if (idx === -1) continue
-      loser.tasks[idx].isMergeRef = true
-      loser.tasks[idx].mergeIntoChainId = winner.id
-      loser.tasks.splice(idx + 1)
+    if (firstMergeIdx === -1) {
+      items.push({ type: 'simple', id: chain.id, tasks: chain.tasks, headScore: chain.headScore })
+      processedChainIds.add(chain.id)
+      continue
     }
+
+    const mergeTaskId = chain.tasks[firstMergeIdx].id
+
+    if (handledMergeTaskIds.has(mergeTaskId)) {
+      processedChainIds.add(chain.id)
+      continue
+    }
+
+    // Alle Ketten dieser Merge-Gruppe zusammenholen
+    const groupChainIds = [...(taskToChainIds.get(mergeTaskId) ?? new Set<string>())]
+    const groupChains = groupChainIds
+      .map((id) => chainById.get(id))
+      .filter((c): c is NetzplanChain => c !== undefined)
+
+    const paths: MergedNetzplanPath[] = []
+    let sharedTail: TaskWithGraph[] = []
+
+    for (const gc of groupChains) {
+      const idx = gc.tasks.findIndex((t) => t.id === mergeTaskId)
+      if (idx === -1) continue
+      paths.push({ tasks: gc.tasks.slice(0, idx), headScore: gc.headScore })
+      if (sharedTail.length === 0) sharedTail = gc.tasks.slice(idx)
+      processedChainIds.add(gc.id)
+    }
+
+    handledMergeTaskIds.add(mergeTaskId)
+
+    if (paths.length < 2) {
+      items.push({ type: 'simple', id: chain.id, tasks: chain.tasks, headScore: chain.headScore })
+      continue
+    }
+
+    // Höchster Score oben
+    paths.sort((a, b) => b.headScore - a.headScore)
+
+    const combinedScore = Math.round(paths.reduce((s, p) => s + p.headScore, 0) / paths.length)
+
+    items.push({
+      type: 'merged',
+      id: `merged-${mergeTaskId}`,
+      paths,
+      sharedTail,
+      combinedScore,
+    })
   }
 
-  return chains
+  // Nach Score sortieren
+  items.sort((a, b) => {
+    const sa = a.type === 'merged' ? a.combinedScore : a.headScore
+    const sb = b.type === 'merged' ? b.combinedScore : b.headScore
+    return sb - sa
+  })
+
+  return items
 }
 
 // ── Orchestrierung Schritte 1–3 (Debug-Export) ────────────────────────────────
@@ -218,12 +298,11 @@ export function runNetzplanSteps123(derivedTasks: DerivedTask[]): {
 
 export function runNetzplanAlgorithm(derivedTasks: DerivedTask[]): {
   taskMap: Map<string, TaskWithGraph>
-  chains: NetzplanChain[]
+  items: NetzplanItem[]
 } {
-  const taskMap = buildGraph(derivedTasks)   // Schritt 1
-  computeUrgencyScores(taskMap)              // Schritt 2
-  const chains = buildChains(taskMap)        // Schritt 3
-  resolveMergeTasks(chains)                  // Schritt 4
-  // Schritt 5: Sortierung ist bereits in buildChains() enthalten
-  return { taskMap, chains }
+  const taskMap = buildGraph(derivedTasks)
+  computeUrgencyScores(taskMap)
+  const chains = buildChains(taskMap)
+  const items = buildNetzplanItems(chains)
+  return { taskMap, items }
 }

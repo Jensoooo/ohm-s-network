@@ -4,7 +4,7 @@ import { useStore } from "@/lib/store";
 import { useDerivedTasks } from "./TaskCard";
 import { ownerStyle, PRIORITY_DOT, withAlpha } from "@/lib/colors";
 import { runNetzplanAlgorithm } from "@/lib/netzplan";
-import type { NetzplanChain, TaskWithGraph } from "@/lib/netzplan";
+import type { NetzplanItem, SimpleNetzplanItem, MergedNetzplanItem, TaskWithGraph } from "@/lib/netzplan";
 import type { User } from "@/lib/types";
 
 // ── Deadline ──────────────────────────────────────────────────────────────────
@@ -36,7 +36,6 @@ function ChainTaskCard({
   const st = ownerStyle(owner);
   const done = task.effectiveStatus === "done";
   const blocked = task.isBlocked;
-  const merge = task.isMergeRef;
   const dot = PRIORITY_DOT[task.priority];
   const dl = deadlineLabel(task.deadline, task.no_deadline);
   const isSource = connectMode && connectSource === task.id;
@@ -48,14 +47,12 @@ function ChainTaskCard({
       className="shrink-0 rounded-lg text-left active:scale-[0.97] transition-transform"
       style={{
         width: w, height: h,
-        background: done || merge ? "transparent" : st.bg,
-        border: `1.5px ${blocked || merge ? "dashed" : "solid"} ${
-          merge ? withAlpha(st.main, 0.3) : done ? withAlpha(st.main, 0.2) : st.main
-        }`,
-        opacity: done ? 0.35 : merge ? 0.45 : 1,
+        background: done ? "transparent" : st.bg,
+        border: `1.5px ${blocked ? "dashed" : "solid"} ${done ? withAlpha(st.main, 0.2) : st.main}`,
+        opacity: done ? 0.35 : 1,
         boxShadow: isSource
           ? `0 0 0 2px white, 0 0 14px ${st.main}`
-          : !done && !merge && !blocked
+          : !done && !blocked
           ? `0 0 6px ${withAlpha(st.main, 0.22)}`
           : undefined,
       }}
@@ -93,8 +90,8 @@ function ChainTaskCard({
 
 // ── Arrows ────────────────────────────────────────────────────────────────────
 
-function HArrow({ dim = false }: { dim?: boolean }) {
-  const c = dim ? "rgba(167,139,250,0.2)" : "rgba(167,139,250,0.5)";
+function HArrow() {
+  const c = "rgba(167,139,250,0.5)";
   return (
     <div className="flex items-center shrink-0 px-0.5">
       <div className="h-px w-3" style={{ background: c }} />
@@ -112,56 +109,41 @@ function VArrow() {
   );
 }
 
-// ── Merge-Ref Label ───────────────────────────────────────────────────────────
+// ── Score Badge ───────────────────────────────────────────────────────────────
 
-function MergeLabel({ task, chainById }: { task: TaskWithGraph; chainById: Map<string, NetzplanChain> }) {
-  const winner = chainById.get(task.mergeIntoChainId ?? "");
-  const label = winner?.tasks[0]?.title?.slice(0, 20) ?? "Kette";
+function ScoreBadge({ score, onExpand }: { score: number; onExpand: () => void }) {
   return (
-    <span className="text-[9px] italic ml-1 shrink-0" style={{ color: "rgba(167,139,250,0.55)" }}>
-      → {label}
-    </span>
+    <button
+      onClick={onExpand}
+      className="flex flex-col items-center justify-center rounded-lg shrink-0 gap-0.5 py-1"
+      style={{ width: 42, minHeight: 62, background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.12)" }}
+    >
+      <span className="text-[9px] font-bold text-[#a78bfa]">{score}</span>
+      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+    </button>
   );
 }
 
-// ── Collapsed Chain Row ───────────────────────────────────────────────────────
+// ── Collapsed Simple Row ──────────────────────────────────────────────────────
 
 function CollapsedChainRow({
-  chain, users, onExpand, onTaskTap, connectMode, connectSource, chainById,
+  item, users, onExpand, onTaskTap, connectMode, connectSource,
 }: {
-  chain: NetzplanChain;
+  item: SimpleNetzplanItem;
   users: User[];
   onExpand: () => void;
   onTaskTap: (id: string) => void;
   connectMode?: boolean;
   connectSource?: string | null;
-  chainById: Map<string, NetzplanChain>;
 }) {
   return (
     <div className="flex items-center gap-1.5 py-1.5">
-      {/* Score + Expand-Button */}
-      <button
-        onClick={onExpand}
-        className="flex flex-col items-center justify-center rounded-lg shrink-0 gap-0.5 py-1"
-        style={{ width: 42, minHeight: 62, background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.12)" }}
-      >
-        <span className="text-[9px] font-bold text-[#a78bfa]">{chain.headScore}</span>
-        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
-
-      {/* Horizontaler Task-Strip */}
+      <ScoreBadge score={item.headScore} onExpand={onExpand} />
       <div className="flex items-center overflow-x-auto no-scrollbar flex-1">
-        {chain.tasks.map((task, i) => (
+        {item.tasks.map((task, i) => (
           <div key={task.id} className="flex items-center shrink-0">
-            {i > 0 && <HArrow dim={task.isMergeRef} />}
-            <ChainTaskCard
-              task={task}
-              users={users}
-              onTap={onTaskTap}
-              connectMode={connectMode}
-              connectSource={connectSource}
-            />
-            {task.isMergeRef && <MergeLabel task={task} chainById={chainById} />}
+            {i > 0 && <HArrow />}
+            <ChainTaskCard task={task} users={users} onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
           </div>
         ))}
       </div>
@@ -169,47 +151,138 @@ function CollapsedChainRow({
   );
 }
 
-// ── Expanded Chain Column ─────────────────────────────────────────────────────
+// ── Collapsed Merged Row ──────────────────────────────────────────────────────
+// Oben: Gewinner-Pfad + gemeinsamer Schwanz (volle Kette).
+// Darunter: je eine Zeile pro Verlierer-Pfad, endet mit ↑ (zeigt auf Gewinner-Kette).
+
+function MergedCollapsedRow({
+  item, users, onExpand, onTaskTap, connectMode, connectSource,
+}: {
+  item: MergedNetzplanItem;
+  users: User[];
+  onExpand: () => void;
+  onTaskTap: (id: string) => void;
+  connectMode?: boolean;
+  connectSource?: string | null;
+}) {
+  const [winnerPath, ...loserPaths] = item.paths;
+  const topRow = [...winnerPath.tasks, ...item.sharedTail];
+
+  return (
+    <div className="flex items-start gap-1.5 py-1.5">
+      <ScoreBadge score={item.combinedScore} onExpand={onExpand} />
+
+      <div className="flex flex-col gap-1 overflow-x-auto no-scrollbar flex-1">
+        {/* Obere Zeile: volle Gewinner-Kette */}
+        <div className="flex items-center shrink-0">
+          {topRow.map((task, i) => (
+            <div key={task.id} className="flex items-center shrink-0">
+              {i > 0 && <HArrow />}
+              <ChainTaskCard task={task} users={users} onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
+            </div>
+          ))}
+        </div>
+
+        {/* Untere Zeilen: Verlierer-Pfade + ↑ */}
+        {loserPaths.map((path, pi) => (
+          <div key={pi} className="flex items-center shrink-0">
+            {path.tasks.map((task, i) => (
+              <div key={task.id} className="flex items-center shrink-0">
+                {i > 0 && <HArrow />}
+                <ChainTaskCard task={task} users={users} onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
+              </div>
+            ))}
+            <div className="flex items-center shrink-0 px-1">
+              <span className="text-[13px] leading-none" style={{ color: "rgba(167,139,250,0.6)" }}>↑</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Expanded Simple Column ────────────────────────────────────────────────────
 
 function ExpandedChainColumn({
-  chain, users, onCollapse, onTaskTap, connectMode, connectSource, chainById,
+  item, users, onCollapse, onTaskTap, connectMode, connectSource,
 }: {
-  chain: NetzplanChain;
+  item: SimpleNetzplanItem;
   users: User[];
   onCollapse: () => void;
   onTaskTap: (id: string) => void;
   connectMode?: boolean;
   connectSource?: string | null;
-  chainById: Map<string, NetzplanChain>;
 }) {
   return (
     <div className="flex flex-col items-center shrink-0" style={{ width: 192 }}>
-      {/* Header */}
       <div className="flex items-center justify-between w-full mb-2 px-1">
-        <span className="text-[10px] font-bold text-[#a78bfa]">Score {chain.headScore}</span>
+        <span className="text-[10px] font-bold text-[#a78bfa]">Score {item.headScore}</span>
+        <button onClick={onCollapse} className="p-0.5 rounded text-muted-foreground active:text-foreground">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="flex flex-col items-center overflow-y-auto no-scrollbar">
+        {item.tasks.map((task, i) => (
+          <div key={task.id} className="flex flex-col items-center">
+            {i > 0 && <VArrow />}
+            <ChainTaskCard task={task} users={users} vertical onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Expanded Merged Column ────────────────────────────────────────────────────
+// Eingangspfade als beschriftete Abschnitte, dann Trennlinie, dann gemeinsamer Schwanz.
+
+function MergedExpandedColumn({
+  item, users, onCollapse, onTaskTap, connectMode, connectSource,
+}: {
+  item: MergedNetzplanItem;
+  users: User[];
+  onCollapse: () => void;
+  onTaskTap: (id: string) => void;
+  connectMode?: boolean;
+  connectSource?: string | null;
+}) {
+  return (
+    <div className="flex flex-col items-center shrink-0" style={{ width: 210 }}>
+      <div className="flex items-center justify-between w-full mb-2 px-1">
+        <span className="text-[10px] font-bold text-[#a78bfa]">Score Ø {item.combinedScore}</span>
         <button onClick={onCollapse} className="p-0.5 rounded text-muted-foreground active:text-foreground">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Vertikaler Task-Strip */}
-      <div className="flex flex-col items-center overflow-y-auto no-scrollbar">
-        {chain.tasks.map((task, i) => (
+      {/* Oben: volle Gewinner-Kette vertikal */}
+      <div className="flex flex-col items-center overflow-y-auto no-scrollbar w-full">
+        {[...item.paths[0].tasks, ...item.sharedTail].map((task, i) => (
           <div key={task.id} className="flex flex-col items-center">
             {i > 0 && <VArrow />}
-            <ChainTaskCard
-              task={task}
-              users={users}
-              vertical
-              onTap={onTaskTap}
-              connectMode={connectMode}
-              connectSource={connectSource}
-            />
-            {task.isMergeRef && (
-              <div className="mt-1 mb-1">
-                <MergeLabel task={task} chainById={chainById} />
-              </div>
-            )}
+            <ChainTaskCard task={task} users={users} vertical onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
+          </div>
+        ))}
+
+        {/* Verlierer-Pfade mit ↑ */}
+        {item.paths.slice(1).map((path, pi) => (
+          <div key={pi} className="mt-3 w-full">
+            <div className="flex items-center gap-1 mb-2 w-full px-2">
+              <div className="h-px flex-1" style={{ background: "rgba(167,139,250,0.2)" }} />
+              <span className="text-[8px] shrink-0 opacity-50" style={{ color: "rgba(167,139,250,0.7)" }}>
+                ↑ Score {path.headScore}
+              </span>
+              <div className="h-px flex-1" style={{ background: "rgba(167,139,250,0.2)" }} />
+            </div>
+            <div className="flex flex-col items-center">
+              {path.tasks.map((task, i) => (
+                <div key={task.id} className="flex flex-col items-center">
+                  {i > 0 && <VArrow />}
+                  <ChainTaskCard task={task} users={users} vertical onTap={onTaskTap} connectMode={connectMode} connectSource={connectSource} />
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -239,7 +312,6 @@ export function NetzplanChainView({
   const filterOwnerIds = useStore((s) => s.filterOwnerIds);
   const filterProjectIds = useStore((s) => s.filterProjectIds);
 
-  // Filter VOR dem Algorithmus anwenden (Spec: Schritt 1–5 mit filteredTasks neu berechnen)
   const filteredTasks = useMemo(
     () =>
       derived
@@ -250,12 +322,10 @@ export function NetzplanChainView({
     [derived, showDone, filterAreaIds, filterOwnerIds, filterProjectIds],
   );
 
-  const { chains } = useMemo(
-    () => filteredTasks.length > 0 ? runNetzplanAlgorithm(filteredTasks) : { chains: [], taskMap: new Map() },
+  const { items } = useMemo(
+    () => filteredTasks.length > 0 ? runNetzplanAlgorithm(filteredTasks) : { items: [] },
     [filteredTasks],
   );
-
-  const chainById = useMemo(() => new Map(chains.map((c) => [c.id, c])), [chains]);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -287,48 +357,53 @@ export function NetzplanChainView({
     );
   }
 
-  const expandedChains = chains.filter((c) => expandedIds.has(c.id));
-  const collapsedChains = chains.filter((c) => !expandedIds.has(c.id));
+  const expandedItems = items.filter((i) => expandedIds.has(i.id));
+  const collapsedItems = items.filter((i) => !expandedIds.has(i.id));
 
   return (
     <div className="flex flex-col h-full" style={{ background: connectMode ? "#1a0a3d" : "#0f0228" }}>
-
-      {/* Aufgeklappte Ketten: nebeneinander als vertikale Spalten */}
-      {expandedChains.length > 0 && (
+      {/* Aufgeklappte Items */}
+      {expandedItems.length > 0 && (
         <div
           className="flex flex-row gap-4 overflow-x-auto overflow-y-auto p-3 flex-shrink-0 border-b"
           style={{ maxHeight: "50vh", borderColor: "rgba(167,139,250,0.12)" }}
         >
-          {expandedChains.map((chain) => (
-            <ExpandedChainColumn
-              key={chain.id}
-              chain={chain}
-              users={users}
-              onCollapse={() => toggle(chain.id)}
-              onTaskTap={handleTaskTap}
-              connectMode={connectMode}
-              connectSource={connectSource}
-              chainById={chainById}
-            />
-          ))}
+          {expandedItems.map((item) =>
+            item.type === 'simple' ? (
+              <ExpandedChainColumn
+                key={item.id} item={item} users={users}
+                onCollapse={() => toggle(item.id)} onTaskTap={handleTaskTap}
+                connectMode={connectMode} connectSource={connectSource}
+              />
+            ) : (
+              <MergedExpandedColumn
+                key={item.id} item={item} users={users}
+                onCollapse={() => toggle(item.id)} onTaskTap={handleTaskTap}
+                connectMode={connectMode} connectSource={connectSource}
+              />
+            )
+          )}
         </div>
       )}
 
-      {/* Zugeklappte Ketten: vertikale Liste von horizontalen Zeilen */}
+      {/* Zugeklappte Items */}
       <div className="flex-1 overflow-y-auto px-3">
         <div className="flex flex-col divide-y" style={{ borderColor: "rgba(167,139,250,0.07)" }}>
-          {collapsedChains.map((chain) => (
-            <CollapsedChainRow
-              key={chain.id}
-              chain={chain}
-              users={users}
-              onExpand={() => toggle(chain.id)}
-              onTaskTap={handleTaskTap}
-              connectMode={connectMode}
-              connectSource={connectSource}
-              chainById={chainById}
-            />
-          ))}
+          {collapsedItems.map((item) =>
+            item.type === 'simple' ? (
+              <CollapsedChainRow
+                key={item.id} item={item} users={users}
+                onExpand={() => toggle(item.id)} onTaskTap={handleTaskTap}
+                connectMode={connectMode} connectSource={connectSource}
+              />
+            ) : (
+              <MergedCollapsedRow
+                key={item.id} item={item} users={users}
+                onExpand={() => toggle(item.id)} onTaskTap={handleTaskTap}
+                connectMode={connectMode} connectSource={connectSource}
+              />
+            )
+          )}
         </div>
       </div>
     </div>
