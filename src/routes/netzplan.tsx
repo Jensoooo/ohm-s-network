@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { NetworkCanvas } from "@/components/NetworkCanvas";
+import { NetzplanChainView } from "@/components/NetzplanChainView";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
 import { ownerStyle } from "@/lib/colors";
@@ -116,7 +116,7 @@ function NetzplanPage() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <NetworkCanvas
+        <NetzplanChainView
           connectMode={connectMode}
           connectSource={connectSource}
           onConnectTap={handleConnectTap}
