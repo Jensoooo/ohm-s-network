@@ -133,7 +133,9 @@ Antworte NUR mit dem JSON, kein Text davor oder danach.`;
         if (!res.ok) throw new Error(`Claude API: ${res.status} ${res.statusText}`);
 
         const data = await res.json();
-        const raw = data.content?.[0]?.text ?? "{}";
+        const rawText = data.content?.[0]?.text ?? "{}";
+        // Strip markdown code fences if present (e.g. ```json ... ```)
+        const raw = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
         const parsed: ClaudeResponse = JSON.parse(raw);
 
         setAktionen(parsed.aktionen ?? []);
