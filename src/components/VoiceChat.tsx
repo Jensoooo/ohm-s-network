@@ -77,9 +77,9 @@ export function VoiceChat() {
         return;
       }
 
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
       if (!apiKey) {
-        setError("API-Key fehlt in .env (VITE_GEMINI_API_KEY).");
+        setError("API-Key fehlt in .env (VITE_ANTHROPIC_API_KEY).");
         setPhase("idle");
         return;
       }
@@ -114,22 +114,26 @@ Extrahiere aus der Spracheingabe eine oder mehrere Aktionen im JSON-Format:
 Antworte NUR mit dem JSON, kein Text davor oder danach.`;
 
       try {
-        const prompt = `${systemPrompt}\n\nNutzereingabe: ${text}`;
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-            }),
-          }
-        );
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            system: systemPrompt,
+            messages: [{ role: "user", content: text }],
+          }),
+        });
 
-        if (!res.ok) throw new Error(`Gemini API: ${res.status} ${res.statusText}`);
+        if (!res.ok) throw new Error(`Claude API: ${res.status} ${res.statusText}`);
 
         const data = await res.json();
-        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+        const raw = data.content?.[0]?.text ?? "{}";
         const parsed: ClaudeResponse = JSON.parse(raw);
 
         setAktionen(parsed.aktionen ?? []);
