@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as TimerRouteImport } from './routes/timer'
 import { Route as ProfilRouteImport } from './routes/profil'
 import { Route as NetzplanRouteImport } from './routes/netzplan'
 import { Route as BaustellenRouteImport } from './routes/baustellen'
 import { Route as IndexRouteImport } from './routes/index'
 
+const VoiceRoute = VoiceRouteImport.update({
+  id: '/voice',
+  path: '/voice',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TimerRoute = TimerRouteImport.update({
   id: '/timer',
   path: '/timer',
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
+  '/voice': typeof VoiceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
+  '/voice': typeof VoiceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,21 @@ export interface FileRoutesById {
   '/netzplan': typeof NetzplanRoute
   '/profil': typeof ProfilRoute
   '/timer': typeof TimerRoute
+  '/voice': typeof VoiceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
+  fullPaths: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer' | '/voice'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
-  id: '__root__' | '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer'
+  to: '/' | '/baustellen' | '/netzplan' | '/profil' | '/timer' | '/voice'
+  id:
+    | '__root__'
+    | '/'
+    | '/baustellen'
+    | '/netzplan'
+    | '/profil'
+    | '/timer'
+    | '/voice'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,10 +93,18 @@ export interface RootRouteChildren {
   NetzplanRoute: typeof NetzplanRoute
   ProfilRoute: typeof ProfilRoute
   TimerRoute: typeof TimerRoute
+  VoiceRoute: typeof VoiceRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/voice': {
+      id: '/voice'
+      path: '/voice'
+      fullPath: '/voice'
+      preLoaderRoute: typeof VoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/timer': {
       id: '/timer'
       path: '/timer'
@@ -125,7 +149,18 @@ const rootRouteChildren: RootRouteChildren = {
   NetzplanRoute: NetzplanRoute,
   ProfilRoute: ProfilRoute,
   TimerRoute: TimerRoute,
+  VoiceRoute: VoiceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

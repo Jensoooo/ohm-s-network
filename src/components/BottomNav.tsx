@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Building2, ListChecks, Network, Timer, User } from "lucide-react";
+import { Building2, ListChecks, Network, Mic, User } from "lucide-react";
 
 const items = [
   { to: "/", label: "Aufgaben", icon: ListChecks },
   { to: "/netzplan", label: "Netzplan", icon: Network },
   { to: "/baustellen", label: "Baustellen", icon: Building2 },
-  { to: "/timer", label: "Timer", icon: Timer },
+  { to: "/voice", label: "KI", icon: Mic },
   { to: "/profil", label: "Profil", icon: User },
 ] as const;
 
