@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Mic, MicOff, Check, X, Sun, Send, ChevronLeft } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Mic, MicOff, Check, X, Sun, Send } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { supabase } from "@/integrations/supabase/client";
 import type { Task, Priority } from "@/lib/types";
