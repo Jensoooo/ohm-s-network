@@ -413,18 +413,25 @@ export function NetworkCanvas({
           {/* SVG Pfeile */}
           <svg width={width} height={height} className="absolute inset-0 pointer-events-none">
             <defs>
-              <marker id="arrow-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
-                <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa" />
+              <filter id="arrow-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <marker id="arrow-main" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto">
+                <polyline points="2,2 10,6 2,10" fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </marker>
-              <marker id="arrow-cross" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
-                <path d="M0,1 L9,5 L0,9 z" fill="#6366f1" />
+              <marker id="arrow-cross" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto">
+                <polyline points="2,2 10,6 2,10" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </marker>
               {users.map((u) => {
                 const c = ownerStyle(u).main;
                 return (
                   <linearGradient key={u.id} id={`done-grad-${u.id}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={c} stopOpacity={0.6} />
-                    <stop offset="100%" stopColor={c} stopOpacity={0.1} />
+                    <stop offset="0%" stopColor={c} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={c} stopOpacity={0.08} />
                   </linearGradient>
                 );
               })}
@@ -443,9 +450,11 @@ export function NetworkCanvas({
                     key={`${dep.id}-${p.task.id}`}
                     d={`M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${y2}`}
                     stroke={depDone ? `url(#done-grad-${from.task.owner_id ?? ""})` : crossRow ? "#6366f1" : "#a78bfa"}
-                    strokeWidth={depDone ? 1.5 : 2}
+                    strokeWidth={depDone ? 1 : 3}
+                    strokeLinecap="round"
                     fill="none"
-                    strokeDasharray={depDone ? "4 4" : crossRow ? "3 5" : undefined}
+                    strokeDasharray={depDone ? "3 5" : crossRow ? "4 6" : undefined}
+                    filter={!depDone ? "url(#arrow-glow)" : undefined}
                     markerEnd={depDone ? undefined : crossRow ? "url(#arrow-cross)" : "url(#arrow-main)"}
                   />
                 );
