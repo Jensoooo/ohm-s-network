@@ -77,9 +77,9 @@ export function VoiceChat() {
         return;
       }
 
-      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        setError("API-Key fehlt in .env (VITE_ANTHROPIC_API_KEY).");
+        setError("API-Key fehlt in .env (VITE_GEMINI_API_KEY).");
         setPhase("idle");
         return;
       }
@@ -114,18 +114,14 @@ Extrahiere aus der Spracheingabe eine oder mehrere Aktionen im JSON-Format:
 Antworte NUR mit dem JSON, kein Text davor oder danach.`;
 
       try {
-        // ── Gemini API ──────────────────────────────────────────────────────
-        // Für Anthropic Claude später: endpoint + headers + body-format tauschen
-        const GEMINI_MODEL = "gemini-1.5-flash";
+        const prompt = `${systemPrompt}\n\nNutzereingabe: ${text}`;
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              contents: [{ role: "user", parts: [{ text }] }],
-              generationConfig: { maxOutputTokens: 1024 },
+              contents: [{ parts: [{ text: prompt }] }],
             }),
           }
         );
