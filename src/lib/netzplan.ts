@@ -204,10 +204,16 @@ export function buildNetzplanItems(chains: NetzplanChain[]): NetzplanItem[] {
     }
   }
 
-  // IDs aller Tasks die in 2+ Ketten vorkommen (= Merge-Punkte)
+  // IDs aller Tasks die in 2+ Ketten vorkommen UND dort nicht an Position 0 stehen.
+  // Position 0 = Fork-Punkt (1 Task → mehrere Nachfolger), kein echter Merge.
   const mergeTaskIdSet = new Set<string>(
     [...taskToChainIds.entries()]
-      .filter(([, s]) => s.size >= 2)
+      .filter(([id, s]) => {
+        if (s.size < 2) return false
+        return chains
+          .filter((c) => s.has(c.id))
+          .some((c) => c.tasks.findIndex((t) => t.id === id) > 0)
+      })
       .map(([id]) => id),
   )
 
