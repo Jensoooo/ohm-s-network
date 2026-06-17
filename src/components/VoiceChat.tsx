@@ -66,7 +66,9 @@ export function VoiceChat() {
     typeof window !== "undefined" &&
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
-  // ── Claude API ──────────────────────────────────────────────────────────────
+  // ── AI API (aktuell Gemini, später Claude) ───────────────────────────────────
+  // Key: VITE_ANTHROPIC_API_KEY enthält derzeit den Gemini-Key.
+  // Zum Wechsel auf Anthropic: API_URL + Request-Format unten tauschen.
 
   const processTranscript = useCallback(
     async (text: string) => {
@@ -78,9 +80,7 @@ export function VoiceChat() {
 
       const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
       if (!apiKey) {
-        setError(
-          "VITE_ANTHROPIC_API_KEY fehlt in .env – bitte eintragen und App neu starten."
-        );
+        setError("API-Key fehlt in .env (VITE_ANTHROPIC_API_KEY).");
         setPhase("idle");
         return;
       }
@@ -115,26 +115,26 @@ Extrahiere aus der Spracheingabe eine oder mehrere Aktionen im JSON-Format:
 Antworte NUR mit dem JSON, kein Text davor oder danach.`;
 
       try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1024,
-            system: systemPrompt,
-            messages: [{ role: "user", content: text }],
-          }),
-        });
+        // ── Gemini API ──────────────────────────────────────────────────────
+        // Für Anthropic Claude später: endpoint + headers + body-format tauschen
+        const GEMINI_MODEL = "gemini-1.5-flash";
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: "user", parts: [{ text }] }],
+              generationConfig: { maxOutputTokens: 1024 },
+            }),
+          }
+        );
 
-        if (!res.ok) throw new Error(`Claude API: ${res.status} ${res.statusText}`);
+        if (!res.ok) throw new Error(`Gemini API: ${res.status} ${res.statusText}`);
 
         const data = await res.json();
-        const raw = data.content?.[0]?.text ?? "{}";
+        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
         const parsed: ClaudeResponse = JSON.parse(raw);
 
         setAktionen(parsed.aktionen ?? []);
