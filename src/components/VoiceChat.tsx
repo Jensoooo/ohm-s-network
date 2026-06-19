@@ -810,7 +810,7 @@ JSON-Format der Antwort:
               </div>
             )}
 
-            {aktionen.some((a) => a.typ !== "task_loeschen") && (
+            {aktionen.some((a) => a.typ === "task_erstellen" || a.typ === "task_erledigt" || a.typ === "material_erfasst") && (
               <div className="flex gap-3">
                 <button
                   onClick={() => void executeAktionen()}
