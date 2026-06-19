@@ -63,9 +63,14 @@ export function buildGraph(derivedTasks: DerivedTask[]): Map<string, TaskWithGra
   const directPreds = new Map<string, string[]>()
   const directSuccs = new Map<string, string[]>()
 
+  // Nur Tasks berücksichtigen die sich auch im gefilterten Set befinden.
+  // Tasks außerhalb des Filters (z.B. anderes Projekt) gelten als nicht existent —
+  // sonst werden Tasks mit externen Vorgängern nie als Wurzel erkannt.
+  const taskIds = new Set(derivedTasks.map((t) => t.id))
+
   for (const t of derivedTasks) {
-    directPreds.set(t.id, t.dependsOn.map((d) => d.id))
-    directSuccs.set(t.id, t.blocks.map((b) => b.id))
+    directPreds.set(t.id, t.dependsOn.map((d) => d.id).filter((id) => taskIds.has(id)))
+    directSuccs.set(t.id, t.blocks.map((b) => b.id).filter((id) => taskIds.has(id)))
   }
 
   const result = new Map<string, TaskWithGraph>()
