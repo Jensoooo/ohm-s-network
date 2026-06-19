@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Mic, Pause, Square, Play, Check, X, Sun, Send, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { supabase } from "@/integrations/supabase/client";
@@ -67,6 +67,8 @@ export function VoiceChat() {
   const tasks = useStore((s) => s.tasks);
   const users = useStore((s) => s.users);
   const areas = useStore((s) => s.areas);
+  const loaded = useStore((s) => s.loaded);
+  const load = useStore((s) => s.load);
   const currentUserId = useStore((s) => s.currentUserId);
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
@@ -92,6 +94,9 @@ export function VoiceChat() {
   const processTranscriptRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   phaseRef.current = phase;
+
+  // Sicherstellen dass Store geladen ist wenn direkt auf /voice navigiert wird
+  useEffect(() => { if (!loaded) void load(); }, [loaded, load]);
 
   const hasSpeechAPI =
     typeof window !== "undefined" &&
@@ -126,9 +131,12 @@ export function VoiceChat() {
         .map((t) => `${t.rolle === "user" ? "Elektriker" : "Assistent"}: ${t.text}`)
         .join("\n");
 
+      const baustellenListe = areas.map((a) => a.name).join(", ") || "keine";
+      console.log("[VoiceChat] Store loaded:", loaded, "| Baustellen:", baustellenListe, "| Bearbeiter:", users.map((u) => u.name).join(", ") || "keine", "| Offene Tasks:", tasks.filter((t) => t.status !== "done").length);
+
       return `Du bist ein aufmerksamer Assistent für einen Elektriker (App: OHMERA). Der Elektriker spricht Deutsch und berichtet von der Baustelle.
 
-Verfügbare Baustellen: ${areas.map((a) => a.name).join(", ") || "keine"}
+Verfügbare Baustellen: ${baustellenListe}
 Verfügbare Bearbeiter: ${users.map((u) => u.name).join(", ") || "keine"}
 
 Offene Tasks (nutze die id-Felder für task_erledigt/task_loeschen):
@@ -160,7 +168,7 @@ JSON-Format der Antwort:
   "gespraech_beendet": false
 }`;
     },
-    [tasks, areas, users]
+    [tasks, areas, users, loaded]
   );
 
   // ── Claude API ─────────────────────────────────────────────────────────────
