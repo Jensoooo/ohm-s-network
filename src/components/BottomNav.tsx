@@ -5,7 +5,7 @@ const items = [
   { to: "/", label: "Aufgaben", icon: ListChecks },
   { to: "/netzplan", label: "Netzplan", icon: Network },
   { to: "/baustellen", label: "Baustellen", icon: Building2 },
-  { to: "/voice", label: "KI", icon: Mic },
+  { to: "/voice", label: "Seppl", icon: Mic },
   { to: "/profil", label: "Profil", icon: User },
 ] as const;
 

@@ -70,6 +70,8 @@ export function VoiceChat() {
   const loaded = useStore((s) => s.loaded);
   const load = useStore((s) => s.load);
   const currentUserId = useStore((s) => s.currentUserId);
+  // TODO: echten Username einsetzen sobald Login existiert
+  const currentUserName = users.find((u) => u.id === currentUserId)?.name ?? "Jenso";
   const createTask = useStore((s) => s.createTask);
   const setStatus = useStore((s) => s.setStatus);
   const deleteTask = useStore((s) => s.deleteTask);
@@ -134,7 +136,7 @@ export function VoiceChat() {
       const baustellenListe = areas.map((a) => a.name).join(", ") || "keine";
       console.log("[VoiceChat] Store loaded:", loaded, "| Baustellen:", baustellenListe, "| Bearbeiter:", users.map((u) => u.name).join(", ") || "keine", "| Offene Tasks:", tasks.filter((t) => t.status !== "done").length);
 
-      return `Du bist ein aufmerksamer Assistent für einen Elektriker (App: OHMERA). Der Elektriker spricht Deutsch und berichtet von der Baustelle.
+      return `Du bist ein aufmerksamer Assistent für einen Elektriker (App: OHMERA). Dein Name ist Seppl. Falls der Nutzer dich direkt anspricht oder nach deinem Namen fragt, antworte als Seppl, freundlich und unkompliziert wie ein hilfsbereiter Kollege auf der Baustelle. Der Elektriker spricht Deutsch und berichtet von der Baustelle.
 
 Verfügbare Baustellen: ${baustellenListe}
 Verfügbare Bearbeiter: ${users.map((u) => u.name).join(", ") || "keine"}
@@ -561,7 +563,7 @@ JSON-Format der Antwort:
         style={{ borderColor: "rgba(167,139,250,0.12)" }}
       >
         <span className="text-lg font-bold" style={{ color: "#a78bfa" }}>
-          KI-Assistent
+          Seppl
         </span>
         <button
           onClick={loadTagesabschluss}
@@ -593,8 +595,11 @@ JSON-Format der Antwort:
         {/* ── IDLE ── */}
         {phase === "idle" && (
           <>
-            <div className="text-sm text-center opacity-50">
-              Tippe auf den Mikrofon-Button und sprich auf Deutsch
+            <div className="text-center">
+              <p className="text-base font-semibold mb-1" style={{ color: "#a78bfa" }}>
+                Hallo {currentUserName}! Was kann ich für dich tun?
+              </p>
+              <p className="text-xs opacity-40">Tippe auf den Mikrofon-Button und sprich auf Deutsch</p>
             </div>
             {hasSpeechAPI ? (
               <button
@@ -688,7 +693,7 @@ JSON-Format der Antwort:
         {/* ── THINKING ── */}
         {phase === "thinking" && (
           <>
-            <div className="text-sm opacity-60">Verarbeite…</div>
+            <div className="text-sm opacity-60">Seppl denkt nach…</div>
             {transcriptBuffer && (
               <div
                 className="w-full rounded-xl p-3 text-sm"
@@ -713,7 +718,7 @@ JSON-Format der Antwort:
                 className="rounded-xl p-4"
                 style={{ background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.2)" }}
               >
-                <p className="text-xs font-bold mb-3 opacity-50 tracking-wide">CLAUDE SCHLÄGT VOR:</p>
+                <p className="text-xs font-bold mb-3 opacity-50 tracking-wide">SEPPL SCHLÄGT VOR:</p>
                 <ul className="flex flex-col gap-2">
                   {aktionen.map((a, i) => (
                     <li
@@ -805,7 +810,7 @@ JSON-Format der Antwort:
                   color: "#fde68a",
                 }}
               >
-                <span className="text-xs font-bold block mb-1 opacity-50">CLAUDE FRAGT:</span>
+                <span className="text-xs font-bold block mb-1 opacity-50">SEPPL FRAGT:</span>
                 {rueckfrage}
               </div>
             )}
@@ -850,7 +855,7 @@ JSON-Format der Antwort:
                 color: "#fde68a",
               }}
             >
-              <span className="text-xs font-bold block mb-2 opacity-50">CLAUDE FRAGT:</span>
+              <span className="text-xs font-bold block mb-2 opacity-50">SEPPL FRAGT:</span>
               <p className="text-sm">{rueckfrage}</p>
             </div>
 
