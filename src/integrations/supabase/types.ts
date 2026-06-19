@@ -68,6 +68,54 @@ export type Database = {
         }
         Relationships: []
       }
+      material_usage: {
+        Row: {
+          area_id: string | null
+          artikel_name: string | null
+          created_at: string | null
+          einheit: string | null
+          id: string
+          menge: number | null
+          raw_text: string
+          task_id: string | null
+        }
+        Insert: {
+          area_id?: string | null
+          artikel_name?: string | null
+          created_at?: string | null
+          einheit?: string | null
+          id?: string
+          menge?: number | null
+          raw_text: string
+          task_id?: string | null
+        }
+        Update: {
+          area_id?: string | null
+          artikel_name?: string | null
+          created_at?: string | null
+          einheit?: string | null
+          id?: string
+          menge?: number | null
+          raw_text?: string
+          task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "material_usage_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "material_usage_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           address: string | null
