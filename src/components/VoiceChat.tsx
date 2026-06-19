@@ -67,6 +67,7 @@ export function VoiceChat() {
   const tasks = useStore((s) => s.tasks);
   const users = useStore((s) => s.users);
   const areas = useStore((s) => s.areas);
+  const projects = useStore((s) => s.projects);
   const loaded = useStore((s) => s.loaded);
   const load = useStore((s) => s.load);
   const currentUserId = useStore((s) => s.currentUserId);
@@ -123,8 +124,8 @@ export function VoiceChat() {
       const offeneTasks = tasks
         .filter((t) => t.status !== "done")
         .map((t) => {
-          const aName = areas.find((a) => a.id === t.area_id)?.name ?? "";
-          return `  - id="${t.id}" titel="${t.title}"${aName ? ` baustelle="${aName}"` : ""}`;
+          const pName = projects.find((p) => p.id === t.project_id)?.name ?? "";
+          return `  - id="${t.id}" titel="${t.title}"${pName ? ` baustelle="${pName}"` : ""}`;
         })
         .join("\n");
 
@@ -133,8 +134,7 @@ export function VoiceChat() {
         .map((t) => `${t.rolle === "user" ? "Elektriker" : "Assistent"}: ${t.text}`)
         .join("\n");
 
-      const baustellenListe = areas.map((a) => a.name).join(", ") || "keine";
-      console.log("[VoiceChat] Store loaded:", loaded, "| Baustellen:", baustellenListe, "| Bearbeiter:", users.map((u) => u.name).join(", ") || "keine", "| Offene Tasks:", tasks.filter((t) => t.status !== "done").length);
+      const baustellenListe = projects.map((p) => p.name).join(", ") || "keine";
 
       return `Du bist ein aufmerksamer Assistent für einen Elektriker (App: OHMERA). Dein Name ist Seppl. Falls der Nutzer dich direkt anspricht oder nach deinem Namen fragt, antworte als Seppl, freundlich und unkompliziert wie ein hilfsbereiter Kollege auf der Baustelle. Der Elektriker spricht Deutsch und berichtet von der Baustelle.
 
@@ -170,7 +170,7 @@ JSON-Format der Antwort:
   "gespraech_beendet": false
 }`;
     },
-    [tasks, areas, users, loaded]
+    [tasks, areas, projects, users, loaded]
   );
 
   // ── Claude API ─────────────────────────────────────────────────────────────
@@ -359,8 +359,8 @@ JSON-Format der Antwort:
         if (match) await setStatus(match.id, "done");
 
       } else if (aktion.typ === "task_erstellen") {
-        const area = aktion.baustelle
-          ? areas.find((a) => a.name.toLowerCase().includes(aktion.baustelle!.toLowerCase()))
+        const project = aktion.baustelle
+          ? projects.find((p) => p.name.toLowerCase().includes(aktion.baustelle!.toLowerCase()))
           : null;
         const owner = aktion.assignee
           ? users.find((u) => u.name.toLowerCase().includes(aktion.assignee!.toLowerCase()))
@@ -373,7 +373,8 @@ JSON-Format der Antwort:
         await createTask(
           {
             title: aktion.titel,
-            area_id: area?.id ?? areas[0]?.id ?? "",
+            project_id: project?.id ?? null,
+            area_id: areas[0]?.id ?? "",
             owner_id: owner?.id ?? currentUserId ?? users[0]?.id ?? "",
             priority: PRIO_MAP[aktion.prioritaet ?? ""] ?? "niedrig",
             deadline,
@@ -418,7 +419,7 @@ JSON-Format der Antwort:
         setRueckfrage(null);
       }
     }
-  }, [aktionen, rueckfrage, sessionEnding, tasks, areas, users, currentUserId, createTask, setStatus]);
+  }, [aktionen, rueckfrage, sessionEnding, tasks, areas, projects, users, currentUserId, createTask, setStatus]);
 
   const executeDelete = useCallback(
     async (aktion: Extract<Aktion, { typ: "task_loeschen" }>) => {

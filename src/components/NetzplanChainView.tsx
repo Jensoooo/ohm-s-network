@@ -313,17 +313,11 @@ export function NetzplanChainView({
   const filterProjectIds = useStore((s) => s.filterProjectIds);
 
   const filteredTasks = useMemo(
-    () => {
-      console.log("[Netzplan] filterAreaIds:", filterAreaIds, "filterProjectIds:", filterProjectIds);
-      console.log("[Netzplan] alle Tasks area_id/project_id:", derived.map((t) => ({ id: t.id, title: t.title, area_id: t.area_id, project_id: t.project_id })));
-      const result = derived
-        .filter((t) => showDone || t.effectiveStatus !== "done")
-        .filter((t) => filterAreaIds.length === 0 || filterAreaIds.includes(t.area_id ?? ""))
-        .filter((t) => filterOwnerIds.length === 0 || filterOwnerIds.includes(t.owner_id ?? ""))
-        .filter((t) => filterProjectIds.length === 0 || filterProjectIds.includes(t.project_id ?? ""));
-      console.log("[Netzplan] nach Filter:", result.length, "Tasks");
-      return result;
-    },
+    () => derived
+      .filter((t) => showDone || t.effectiveStatus !== "done")
+      .filter((t) => filterAreaIds.length === 0 || filterAreaIds.includes(t.area_id ?? ""))
+      .filter((t) => filterOwnerIds.length === 0 || filterOwnerIds.includes(t.owner_id ?? ""))
+      .filter((t) => filterProjectIds.length === 0 || filterProjectIds.includes(t.project_id ?? "")),
     [derived, showDone, filterAreaIds, filterOwnerIds, filterProjectIds],
   );
 
