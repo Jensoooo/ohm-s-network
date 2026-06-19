@@ -71,31 +71,37 @@ export type Database = {
       material_usage: {
         Row: {
           area_id: string | null
+          artikel_id: string | null
           artikel_name: string | null
           created_at: string | null
           einheit: string | null
           id: string
           menge: number | null
+          preis_pro_einheit: number | null
           raw_text: string
           task_id: string | null
         }
         Insert: {
           area_id?: string | null
+          artikel_id?: string | null
           artikel_name?: string | null
           created_at?: string | null
           einheit?: string | null
           id?: string
           menge?: number | null
+          preis_pro_einheit?: number | null
           raw_text: string
           task_id?: string | null
         }
         Update: {
           area_id?: string | null
+          artikel_id?: string | null
           artikel_name?: string | null
           created_at?: string | null
           einheit?: string | null
           id?: string
           menge?: number | null
+          preis_pro_einheit?: number | null
           raw_text?: string
           task_id?: string | null
         }
