@@ -206,6 +206,74 @@ JSON-Format der Antwort:
     [buildSystemPrompt]
   );
 
+  // ── Run non-delete actions (shared by processTranscript + executeAktionen) ──
+
+  const runNonDeleteAktionen = useCallback(
+    async (aktionenList: Aktion[]) => {
+      for (const aktion of aktionenList) {
+        if (aktion.typ === "task_loeschen") continue;
+
+        if (aktion.typ === "task_erledigt") {
+          let match: Task | undefined;
+          if (aktion.task_id) match = tasks.find((t) => t.id === aktion.task_id);
+          if (!match && aktion.task_titel) {
+            const lc = aktion.task_titel.toLowerCase();
+            match = tasks.find(
+              (t) =>
+                t.status !== "done" &&
+                (t.title.toLowerCase().includes(lc) || lc.includes(t.title.toLowerCase()))
+            );
+          }
+          if (match) await setStatus(match.id, "done");
+
+        } else if (aktion.typ === "task_erstellen") {
+          const project = aktion.baustelle
+            ? projects.find((p) => p.name.toLowerCase().includes(aktion.baustelle!.toLowerCase()))
+            : null;
+          const owner = aktion.assignee
+            ? users.find((u) => u.name.toLowerCase().includes(aktion.assignee!.toLowerCase()))
+            : null;
+          const deadline =
+            aktion.faellig_in_tagen != null
+              ? new Date(Date.now() + aktion.faellig_in_tagen * 86400000).toISOString().split("T")[0]
+              : null;
+          await createTask(
+            {
+              title: aktion.titel,
+              project_id: project?.id ?? null,
+              area_id: areas[0]?.id ?? "",
+              owner_id: owner?.id ?? currentUserId ?? users[0]?.id ?? "",
+              priority: PRIO_MAP[aktion.prioritaet ?? ""] ?? "niedrig",
+              deadline,
+              no_deadline: deadline == null,
+            },
+            []
+          );
+
+        } else if (aktion.typ === "material_erfasst") {
+          let areaId: string | null = null;
+          if (aktion.task_id) {
+            const t = tasks.find((t) => t.id === aktion.task_id);
+            if (t) areaId = t.area_id;
+          }
+          try {
+            await (supabase as any).from("material_usage").insert({
+              raw_text: aktion.raw_text,
+              menge: aktion.menge ?? null,
+              einheit: aktion.einheit ?? null,
+              artikel_name: aktion.artikel_name ?? null,
+              task_id: aktion.task_id ?? null,
+              area_id: areaId,
+            });
+          } catch {
+            // table may not be migrated yet — fail silently
+          }
+        }
+      }
+    },
+    [tasks, areas, projects, users, currentUserId, createTask, setStatus]
+  );
+
   // ── Process transcript ─────────────────────────────────────────────────────
 
   const processTranscript = useCallback(
@@ -220,25 +288,39 @@ JSON-Format der Antwort:
 
       try {
         const parsed = await callClaude(text, conversationHistory);
-        const assistantText = parsed.rueckfrage ?? "";
+        const aktionenList = parsed.aktionen ?? [];
+        const rf = parsed.rueckfrage ?? null;
+        const assistantText = rf ?? "";
 
         setConversationHistory((prev) => [
           ...prev,
           { rolle: "user" as const, text },
           ...(assistantText ? [{ rolle: "assistant" as const, text: assistantText }] : []),
         ]);
-
         updateBuffer("");
-        setAktionen(parsed.aktionen ?? []);
-        setRueckfrage(parsed.rueckfrage ?? null);
         setSessionEnding(parsed.gespraech_beendet ?? false);
-        setPhase("confirm");
+        setRueckfrage(rf);
+
+        const hasExecutable = aktionenList.some(
+          (a) => a.typ === "task_erstellen" || a.typ === "task_erledigt" || a.typ === "material_erfasst"
+        );
+
+        if (rf && hasExecutable) {
+          // Rückfrage vorhanden → Aktionen sofort ausführen, direkt zu antworten
+          await runNonDeleteAktionen(aktionenList);
+          const deletes = aktionenList.filter((a) => a.typ === "task_loeschen");
+          setAktionen(deletes);
+          setPhase(deletes.length > 0 ? "confirm" : "antworten");
+        } else {
+          setAktionen(aktionenList);
+          setPhase("confirm");
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Unbekannter Fehler");
         setPhase("idle");
       }
     },
-    [callClaude, conversationHistory, updateBuffer]
+    [callClaude, conversationHistory, updateBuffer, runNonDeleteAktionen]
   );
 
   processTranscriptRef.current = processTranscript;
@@ -341,68 +423,7 @@ JSON-Format der Antwort:
 
   const executeAktionen = useCallback(async () => {
     setPhase("thinking");
-
-    for (const aktion of aktionen) {
-      if (aktion.typ === "task_loeschen") continue; // handled separately
-
-      if (aktion.typ === "task_erledigt") {
-        let match: Task | undefined;
-        if (aktion.task_id) match = tasks.find((t) => t.id === aktion.task_id);
-        if (!match && aktion.task_titel) {
-          const lc = aktion.task_titel.toLowerCase();
-          match = tasks.find(
-            (t) =>
-              t.status !== "done" &&
-              (t.title.toLowerCase().includes(lc) || lc.includes(t.title.toLowerCase()))
-          );
-        }
-        if (match) await setStatus(match.id, "done");
-
-      } else if (aktion.typ === "task_erstellen") {
-        const project = aktion.baustelle
-          ? projects.find((p) => p.name.toLowerCase().includes(aktion.baustelle!.toLowerCase()))
-          : null;
-        const owner = aktion.assignee
-          ? users.find((u) => u.name.toLowerCase().includes(aktion.assignee!.toLowerCase()))
-          : null;
-        const deadline =
-          aktion.faellig_in_tagen != null
-            ? new Date(Date.now() + aktion.faellig_in_tagen * 86400000).toISOString().split("T")[0]
-            : null;
-
-        await createTask(
-          {
-            title: aktion.titel,
-            project_id: project?.id ?? null,
-            area_id: areas[0]?.id ?? "",
-            owner_id: owner?.id ?? currentUserId ?? users[0]?.id ?? "",
-            priority: PRIO_MAP[aktion.prioritaet ?? ""] ?? "niedrig",
-            deadline,
-            no_deadline: deadline == null,
-          },
-          []
-        );
-
-      } else if (aktion.typ === "material_erfasst") {
-        let areaId: string | null = null;
-        if (aktion.task_id) {
-          const t = tasks.find((t) => t.id === aktion.task_id);
-          if (t) areaId = t.area_id;
-        }
-        try {
-          await (supabase as any).from("material_usage").insert({
-            raw_text: aktion.raw_text,
-            menge: aktion.menge ?? null,
-            einheit: aktion.einheit ?? null,
-            artikel_name: aktion.artikel_name ?? null,
-            task_id: aktion.task_id ?? null,
-            area_id: areaId,
-          });
-        } catch {
-          // table may not be migrated yet — fail silently
-        }
-      }
-    }
+    await runNonDeleteAktionen(aktionen);
 
     if (rueckfrage && !sessionEnding) {
       setAktionen([]);
@@ -419,7 +440,7 @@ JSON-Format der Antwort:
         setRueckfrage(null);
       }
     }
-  }, [aktionen, rueckfrage, sessionEnding, tasks, areas, projects, users, currentUserId, createTask, setStatus]);
+  }, [aktionen, rueckfrage, sessionEnding, runNonDeleteAktionen]);
 
   const executeDelete = useCallback(
     async (aktion: Extract<Aktion, { typ: "task_loeschen" }>) => {
